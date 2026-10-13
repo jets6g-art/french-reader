@@ -3,11 +3,17 @@ const form = document.getElementById("load-form");
 const urlInput = document.getElementById("url");
 const statusEl = document.getElementById("status");
 const articleEl = document.getElementById("article");
-const selectionEl = document.getElementById("selection");
+const popupEl = document.getElementById("popup");
+const popupBody = document.getElementById("popup-body");
+const popupClose = document.getElementById("popup-close");
 const HAS_WORD_CHAR = /[\p{L}\p{N}]/u;
+const LOOKUP_TIMEOUT_MS = 10000; // matches the backend's 10s LLM budget
 // Sentences by id for the current article, so a click can recover its containing sentence.
 let sentencesById = new Map();
+let articleUrl = "";
 let selected = null;
+// The in-flight lookup; a newer click aborts it so a slow reply can't overwrite a newer popup.
+let lookupInFlight = null;
 function setStatus(msg, isError = false) {
     statusEl.textContent = msg;
     statusEl.hidden = msg === "";
@@ -45,6 +51,7 @@ async function loadArticle(url) {
 function render(article) {
     document.title = `${article.title} — French Reader`;
     sentencesById = new Map(article.sentences.map((s) => [s.id, s]));
+    articleUrl = article.url;
     const header = document.createElement("header");
     const h1 = document.createElement("h1");
     h1.textContent = article.title;
@@ -87,9 +94,77 @@ function renderSentence(sentence) {
     return el;
 }
 function clearSelection() {
+    lookupInFlight?.abort();
+    lookupInFlight = null;
     selected?.classList.remove("selected");
     selected = null;
-    selectionEl.hidden = true;
+    popupEl.hidden = true;
+}
+function popupLine(className, text) {
+    const p = document.createElement("p");
+    p.className = className;
+    p.textContent = text;
+    return p;
+}
+function showLoading(word) {
+    popupBody.replaceChildren(popupLine("popup-word", word), popupLine("popup-muted", "Looking up…"));
+    popupEl.hidden = false;
+}
+function showError(word, message, retry) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.textContent = "Retry";
+    button.addEventListener("click", retry);
+    popupBody.replaceChildren(popupLine("popup-word", word), popupLine("popup-error", message), button);
+}
+function showResult(word, r) {
+    const meta = [r.lemma !== word ? `→ ${r.lemma}` : "", r.pos, r.register].filter(Boolean).join(" · ");
+    popupBody.replaceChildren(popupLine("popup-word", word), popupLine("popup-muted", meta), popupLine("popup-meaning", r.meaning), popupLine("popup-gloss", r.gloss), popupLine("popup-note", r.note));
+}
+async function lookup(word, sentence) {
+    lookupInFlight?.abort();
+    const ctl = new AbortController();
+    lookupInFlight = ctl;
+    let timedOut = false;
+    const timer = setTimeout(() => {
+        timedOut = true;
+        ctl.abort();
+    }, LOOKUP_TIMEOUT_MS);
+    showLoading(word);
+    try {
+        const res = await fetch("/api/v1/lookup", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ word, sentence, articleUrl }),
+            signal: ctl.signal,
+        });
+        if (!res.ok) {
+            let reason = `HTTP ${res.status}`;
+            try {
+                const body = await res.json();
+                if (body.message)
+                    reason = body.message;
+            }
+            catch {
+                // non-JSON error body; keep the status line
+            }
+            throw new Error(reason);
+        }
+        const result = (await res.json());
+        if (lookupInFlight === ctl)
+            showResult(word, result);
+    }
+    catch (e) {
+        if (lookupInFlight !== ctl)
+            return; // superseded or closed: nothing to report
+        const message = timedOut
+            ? `Lookup timed out after ${LOOKUP_TIMEOUT_MS / 1000}s.`
+            : `Lookup failed: ${e.message}`;
+        showError(word, message, () => void lookup(word, sentence));
+    }
+    finally {
+        clearTimeout(timer);
+    }
 }
 articleEl.addEventListener("click", (ev) => {
     const word = ev.target.closest(".w");
@@ -101,13 +176,13 @@ articleEl.addEventListener("click", (ev) => {
     selected?.classList.remove("selected");
     selected = word;
     word.classList.add("selected");
-    // Step 3 will POST { word, sentence, articleUrl } to /api/v1/lookup from here.
     const sentenceText = sentence.tokens.map((t) => t.text + t.ws).join("").trim();
-    selectionEl.replaceChildren();
-    const strong = document.createElement("strong");
-    strong.textContent = word.textContent;
-    selectionEl.append(strong, ` — ${sentenceText}`);
-    selectionEl.hidden = false;
+    void lookup(word.textContent ?? "", sentenceText);
+});
+popupClose.addEventListener("click", clearSelection);
+document.addEventListener("keydown", (ev) => {
+    if (ev.key === "Escape")
+        clearSelection();
 });
 form.addEventListener("submit", (ev) => {
     ev.preventDefault();

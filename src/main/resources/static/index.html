@@ -17,7 +17,10 @@
   </form>
   <p id="status" role="status" hidden></p>
   <main id="article"></main>
-  <aside id="selection" hidden aria-live="polite"></aside>
+  <aside id="popup" hidden aria-live="polite">
+    <button id="popup-close" type="button" aria-label="Close">×</button>
+    <div id="popup-body"></div>
+  </aside>
   <script type="module" src="app.js"></script>
 </body>
 </html>

@@ -90,11 +90,45 @@ body {
 .w:hover { background: var(--hover); }
 .w.selected { background: var(--selected); }
 
-#selection {
+#popup {
   position: fixed;
   inset: auto 0 0 0;
+  max-height: 55vh;
+  overflow-y: auto;
   padding: 0.75rem max(16px, env(safe-area-inset-right)) calc(0.75rem + env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left));
   background: var(--bg);
   border-top: 1px solid var(--border);
-  font: 1rem/1.4 system-ui, sans-serif;
+  box-shadow: 0 -4px 16px rgb(0 0 0 / 0.12);
+  font: 1rem/1.45 system-ui, sans-serif;
 }
+
+#popup-body { max-width: 42rem; margin-inline: auto; padding-right: 2rem; }
+#popup-body p { margin: 0 0 0.4rem; }
+#popup-body button {
+  padding: 0.4rem 0.9rem;
+  font: inherit;
+  color: var(--fg);
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+
+#popup-close {
+  position: absolute;
+  top: 0.4rem;
+  right: max(12px, env(safe-area-inset-right));
+  width: 2.25rem;
+  height: 2.25rem;
+  font-size: 1.5rem;
+  line-height: 1;
+  color: var(--muted);
+  background: transparent;
+  border: 0;
+}
+
+.popup-word { font-size: 1.25rem; font-weight: 700; }
+.popup-muted { color: var(--muted); }
+.popup-meaning { font-weight: 600; }
+.popup-gloss { font-style: italic; }
+.popup-note { color: var(--muted); font-size: 0.95rem; }
+.popup-error { color: #c0392b; }
