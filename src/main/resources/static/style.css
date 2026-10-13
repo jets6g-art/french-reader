@@ -1,0 +1,100 @@
+:root {
+  --bg: #fdfcf8;
+  --fg: #1d1d1b;
+  --muted: #6b6b66;
+  --accent: #1f3a5f;
+  --hover: #e6eefb;
+  --selected: #ffe08a;
+  --border: #dedbd0;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #17181a;
+    --fg: #e8e6e0;
+    --muted: #9a9890;
+    --accent: #8db4ee;
+    --hover: #26354d;
+    --selected: #6b5a1c;
+    --border: #34353a;
+  }
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  padding: 0 max(16px, env(safe-area-inset-right)) 6rem max(16px, env(safe-area-inset-left));
+  background: var(--bg);
+  color: var(--fg);
+  font: 1.125rem/1.7 Georgia, "Times New Roman", serif;
+}
+
+#load-form, #status, #article {
+  max-width: 42rem;
+  margin-inline: auto;
+}
+
+#load-form {
+  display: flex;
+  gap: 0.5rem;
+  padding: 1rem 0;
+  font-family: system-ui, sans-serif;
+}
+
+#load-form input {
+  flex: 1;
+  min-width: 0;
+  padding: 0.6rem 0.75rem;
+  font: inherit;
+  font-size: 1rem;
+  color: var(--fg);
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+
+#load-form button {
+  padding: 0.6rem 1rem;
+  font: inherit;
+  font-size: 1rem;
+  color: #fff;
+  background: var(--accent);
+  border: 0;
+  border-radius: 6px;
+}
+
+@media (prefers-color-scheme: dark) {
+  #load-form button { color: #111; }
+}
+
+#status {
+  font-family: system-ui, sans-serif;
+  color: var(--muted);
+}
+#status.error { color: #c0392b; }
+
+#article h1 { font-size: 1.75rem; line-height: 1.25; margin: 1rem 0 0.25rem; }
+#article .source { margin: 0 0 1.5rem; color: var(--muted); font: 0.9rem system-ui, sans-serif; }
+#article h2 { font-size: 1.3rem; line-height: 1.3; margin: 2rem 0 0.5rem; }
+#article p { margin: 0 0 1rem; }
+#article blockquote {
+  margin: 1.5rem 0;
+  padding-left: 1rem;
+  border-left: 3px solid var(--accent);
+  font-size: 1.25rem;
+  font-style: italic;
+}
+
+.w { cursor: pointer; border-radius: 3px; }
+.w:hover { background: var(--hover); }
+.w.selected { background: var(--selected); }
+
+#selection {
+  position: fixed;
+  inset: auto 0 0 0;
+  padding: 0.75rem max(16px, env(safe-area-inset-right)) calc(0.75rem + env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left));
+  background: var(--bg);
+  border-top: 1px solid var(--border);
+  font: 1rem/1.4 system-ui, sans-serif;
+}

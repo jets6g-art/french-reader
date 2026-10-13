@@ -3,3 +3,4 @@ target/
 *.iml
 .vscode/
 .env
+frontend/node_modules/

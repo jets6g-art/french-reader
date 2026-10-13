@@ -1,0 +1,8 @@
+{
+  "name": "French Reader",
+  "short_name": "French Reader",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#fdfcf8",
+  "theme_color": "#1f3a5f"
+}

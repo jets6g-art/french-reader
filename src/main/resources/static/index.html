@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>French Reader</title>
+  <link rel="manifest" href="manifest.json">
+  <meta name="theme-color" content="#1f3a5f">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <form id="load-form">
+    <input id="url" type="url" required inputmode="url" autocomplete="off"
+           placeholder="https://ici.radio-canada.ca/nouvelle/…" aria-label="Article URL">
+    <button type="submit">Read</button>
+  </form>
+  <p id="status" role="status" hidden></p>
+  <main id="article"></main>
+  <aside id="selection" hidden aria-live="polite"></aside>
+  <script type="module" src="app.js"></script>
+</body>
+</html>
