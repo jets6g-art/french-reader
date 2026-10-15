@@ -12,8 +12,11 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
 class LookupControllerTest {
 
+    private static final LookupService STUB =
+            req -> new LookupResponse(req.word(), "pos", "meaning", "register", "gloss", "note");
+
     private final MockMvc mvc = MockMvcBuilders
-            .standaloneSetup(new LookupController(new HardcodedLookupService())).build();
+            .standaloneSetup(new LookupController(STUB)).build();
 
     private ResultActions postJson(String json) throws Exception {
         return mvc.perform(post("/api/v1/lookup").contentType(MediaType.APPLICATION_JSON).content(json));

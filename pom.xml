@@ -20,6 +20,7 @@
     <properties>
         <java.version>17</java.version>
         <jsoup.version>1.23.2</jsoup.version>
+        <anthropic.version>2.34.0</anthropic.version>
     </properties>
 
     <dependencies>
@@ -31,6 +32,11 @@
             <groupId>org.jsoup</groupId>
             <artifactId>jsoup</artifactId>
             <version>${jsoup.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>com.anthropic</groupId>
+            <artifactId>anthropic-java</artifactId>
+            <version>${anthropic.version}</version>
         </dependency>
         <dependency>
             <groupId>org.springframework.boot</groupId>
