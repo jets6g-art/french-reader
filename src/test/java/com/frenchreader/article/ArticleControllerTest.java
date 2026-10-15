@@ -15,12 +15,16 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
 class ArticleControllerTest {
 
+    private static com.frenchreader.cache.FileBackedCache<Article> memoryCache() {
+        return new com.frenchreader.cache.FileBackedCache<>(null, 10, Article.class);
+    }
+
     private static final String URL = "https://ici.radio-canada.ca/nouvelle/1/x";
 
     private static MockMvc mvcFor(String html) {
         ArticleFetcher fetcher = mock(ArticleFetcher.class);
         when(fetcher.fetch(URI.create(URL))).thenReturn(Jsoup.parse(html));
-        return MockMvcBuilders.standaloneSetup(new ArticleController(new ArticleService(fetcher))).build();
+        return MockMvcBuilders.standaloneSetup(new ArticleController(new ArticleService(fetcher, memoryCache(), java.time.Duration.ofHours(1)))).build();
     }
 
     @Test
@@ -51,7 +55,7 @@ class ArticleControllerTest {
 
     @Test
     void unsupportedHostIsRejectedBeforeAnyFetch() {
-        ArticleService service = new ArticleService(mock(ArticleFetcher.class));
+        ArticleService service = new ArticleService(mock(ArticleFetcher.class), memoryCache(), java.time.Duration.ofHours(1));
         for (String bad : new String[] {
                 "http://ici.radio-canada.ca/nouvelle/1/x",
                 "https://example.com/nouvelle/1/x",
@@ -71,7 +75,7 @@ class ArticleControllerTest {
         ArticleService service;
         ArticleFetcher fetcher = mock(ArticleFetcher.class);
         when(fetcher.fetch(URI.create(URL))).thenReturn(Jsoup.parse("<h1>x</h1>"));
-        service = new ArticleService(fetcher);
+        service = new ArticleService(fetcher, memoryCache(), java.time.Duration.ofHours(1));
         org.assertj.core.api.Assertions.assertThatThrownBy(() -> service.load(URL))
                 .hasMessageContaining("422");
     }

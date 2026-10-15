@@ -4,3 +4,4 @@ target/
 .vscode/
 .env
 frontend/node_modules/
+data/
