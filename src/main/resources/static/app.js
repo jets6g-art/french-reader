@@ -1,4 +1,4 @@
-"use strict";
+import { deleteSaved, listSaved, saveItem } from "./api.js";
 const form = document.getElementById("load-form");
 const urlInput = document.getElementById("url");
 const statusEl = document.getElementById("status");
@@ -6,6 +6,7 @@ const articleEl = document.getElementById("article");
 const popupEl = document.getElementById("popup");
 const popupBody = document.getElementById("popup-body");
 const popupClose = document.getElementById("popup-close");
+const savedLink = document.getElementById("saved-link");
 const HAS_WORD_CHAR = /[\p{L}\p{N}]/u;
 const LOOKUP_TIMEOUT_MS = 10000; // matches the backend's 10s LLM budget
 // Sentences by id for the current article, so a click can recover its containing sentence.
@@ -14,6 +15,24 @@ let articleUrl = "";
 let selected = null;
 // The in-flight lookup; a newer click aborts it so a slow reply can't overwrite a newer popup.
 let lookupInFlight = null;
+// Saved entries by normalized lemma -> id, so the popup knows whether to offer Save or Remove.
+const savedByLemma = new Map();
+const lemmaKey = (s) => s.normalize("NFC").trim().toLowerCase().replace(/’/g, "'");
+function updateSavedLink() {
+    savedLink.textContent = savedByLemma.size ? `Saved (${savedByLemma.size})` : "Saved";
+}
+async function refreshSaved() {
+    try {
+        const items = await listSaved();
+        savedByLemma.clear();
+        for (const i of items)
+            savedByLemma.set(lemmaKey(i.lemma), i.id);
+        updateSavedLink();
+    }
+    catch {
+        // Reading doesn't depend on the list; Save still works and corrects the state itself.
+    }
+}
 function setStatus(msg, isError = false) {
     statusEl.textContent = msg;
     statusEl.hidden = msg === "";
@@ -117,9 +136,47 @@ function showError(word, message, retry) {
     button.addEventListener("click", retry);
     popupBody.replaceChildren(popupLine("popup-word", word), popupLine("popup-error", message), button);
 }
-function showResult(word, r) {
+function saveButton(word, sentence, r) {
+    const wrap = document.createElement("div");
+    const button = document.createElement("button");
+    button.type = "button";
+    const error = popupLine("popup-error", "");
+    error.hidden = true;
+    const key = lemmaKey(r.lemma);
+    const render = () => {
+        button.textContent = savedByLemma.has(key) ? "★ Saved · tap to remove" : "☆ Save";
+    };
+    render();
+    button.addEventListener("click", async () => {
+        button.disabled = true;
+        error.hidden = true;
+        try {
+            const id = savedByLemma.get(key);
+            if (id) {
+                await deleteSaved(id);
+                savedByLemma.delete(key);
+            }
+            else {
+                const item = await saveItem(r, { word, sentence, articleUrl });
+                savedByLemma.set(key, item.id);
+            }
+        }
+        catch (e) {
+            error.textContent = `Could not update the saved list: ${e.message}`;
+            error.hidden = false;
+        }
+        finally {
+            button.disabled = false;
+            render();
+            updateSavedLink();
+        }
+    });
+    wrap.append(button, error);
+    return wrap;
+}
+function showResult(word, sentence, r) {
     const meta = [r.lemma !== word ? `→ ${r.lemma}` : "", r.pos, r.register].filter(Boolean).join(" · ");
-    popupBody.replaceChildren(popupLine("popup-word", word), popupLine("popup-muted", meta), popupLine("popup-meaning", r.meaning), popupLine("popup-gloss", r.gloss), popupLine("popup-note", r.note));
+    popupBody.replaceChildren(popupLine("popup-word", word), popupLine("popup-muted", meta), popupLine("popup-meaning", r.meaning), popupLine("popup-gloss", r.gloss), popupLine("popup-note", r.note), saveButton(word, sentence, r));
 }
 async function lookup(word, sentence) {
     lookupInFlight?.abort();
@@ -152,7 +209,7 @@ async function lookup(word, sentence) {
         }
         const result = (await res.json());
         if (lookupInFlight === ctl)
-            showResult(word, result);
+            showResult(word, sentence, result);
     }
     catch (e) {
         if (lookupInFlight !== ctl)
@@ -192,6 +249,7 @@ form.addEventListener("submit", (ev) => {
     history.replaceState(null, "", `?url=${encodeURIComponent(url)}`);
     void loadArticle(url);
 });
+void refreshSaved();
 const initial = new URLSearchParams(location.search).get("url");
 if (initial) {
     urlInput.value = initial;

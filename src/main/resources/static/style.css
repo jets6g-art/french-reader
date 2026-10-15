@@ -132,3 +132,44 @@ body {
 .popup-gloss { font-style: italic; }
 .popup-note { color: var(--muted); font-size: 0.95rem; }
 .popup-error { color: #c0392b; }
+
+#saved-link {
+  align-self: center;
+  white-space: nowrap;
+  color: var(--accent);
+  font-size: 1rem;
+}
+
+#saved-header, #status, #list {
+  max-width: 42rem;
+  margin-inline: auto;
+}
+#saved-header { padding: 1rem 0 0; font-family: system-ui, sans-serif; }
+#saved-header a { color: var(--accent); text-decoration: none; }
+#saved-header h1 { font-size: 1.75rem; margin: 0.5rem 0 1rem; }
+
+.saved-item {
+  padding: 0.9rem 0;
+  border-top: 1px solid var(--border);
+  font: 1rem/1.45 system-ui, sans-serif;
+}
+.saved-item p { margin: 0 0 0.35rem; }
+.saved-lemma { font-size: 1.25rem; font-weight: 700; }
+.saved-sentence {
+  margin: 0.4rem 0;
+  padding-left: 0.75rem;
+  border-left: 3px solid var(--border);
+  color: var(--muted);
+  font: italic 1rem/1.5 Georgia, "Times New Roman", serif;
+}
+.saved-foot { color: var(--muted); font-size: 0.9rem; }
+.saved-foot a { color: var(--accent); }
+.saved-remove {
+  margin-left: 0.75rem;
+  padding: 0.2rem 0.6rem;
+  font: inherit;
+  color: var(--muted);
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}

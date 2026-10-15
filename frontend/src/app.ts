@@ -1,3 +1,6 @@
+import { deleteSaved, listSaved, saveItem } from "./api.js";
+import type { Lookup } from "./types.js";
+
 interface Token {
   idx: number;
   text: string;
@@ -25,15 +28,7 @@ const articleEl = document.getElementById("article") as HTMLElement;
 const popupEl = document.getElementById("popup") as HTMLElement;
 const popupBody = document.getElementById("popup-body") as HTMLElement;
 const popupClose = document.getElementById("popup-close") as HTMLButtonElement;
-
-interface Lookup {
-  lemma: string;
-  pos: string;
-  meaning: string;
-  register: string;
-  gloss: string;
-  note: string;
-}
+const savedLink = document.getElementById("saved-link") as HTMLAnchorElement;
 
 const HAS_WORD_CHAR = /[\p{L}\p{N}]/u;
 const LOOKUP_TIMEOUT_MS = 10_000; // matches the backend's 10s LLM budget
@@ -44,6 +39,25 @@ let articleUrl = "";
 let selected: HTMLElement | null = null;
 // The in-flight lookup; a newer click aborts it so a slow reply can't overwrite a newer popup.
 let lookupInFlight: AbortController | null = null;
+
+// Saved entries by normalized lemma -> id, so the popup knows whether to offer Save or Remove.
+const savedByLemma = new Map<string, string>();
+const lemmaKey = (s: string): string => s.normalize("NFC").trim().toLowerCase().replace(/’/g, "'");
+
+function updateSavedLink(): void {
+  savedLink.textContent = savedByLemma.size ? `Saved (${savedByLemma.size})` : "Saved";
+}
+
+async function refreshSaved(): Promise<void> {
+  try {
+    const items = await listSaved();
+    savedByLemma.clear();
+    for (const i of items) savedByLemma.set(lemmaKey(i.lemma), i.id);
+    updateSavedLink();
+  } catch {
+    // Reading doesn't depend on the list; Save still works and corrects the state itself.
+  }
+}
 
 function setStatus(msg: string, isError = false): void {
   statusEl.textContent = msg;
@@ -155,7 +169,45 @@ function showError(word: string, message: string, retry: () => void): void {
   popupBody.replaceChildren(popupLine("popup-word", word), popupLine("popup-error", message), button);
 }
 
-function showResult(word: string, r: Lookup): void {
+function saveButton(word: string, sentence: string, r: Lookup): HTMLElement {
+  const wrap = document.createElement("div");
+  const button = document.createElement("button");
+  button.type = "button";
+  const error = popupLine("popup-error", "");
+  error.hidden = true;
+
+  const key = lemmaKey(r.lemma);
+  const render = (): void => {
+    button.textContent = savedByLemma.has(key) ? "★ Saved · tap to remove" : "☆ Save";
+  };
+  render();
+
+  button.addEventListener("click", async () => {
+    button.disabled = true;
+    error.hidden = true;
+    try {
+      const id = savedByLemma.get(key);
+      if (id) {
+        await deleteSaved(id);
+        savedByLemma.delete(key);
+      } else {
+        const item = await saveItem(r, { word, sentence, articleUrl });
+        savedByLemma.set(key, item.id);
+      }
+    } catch (e) {
+      error.textContent = `Could not update the saved list: ${(e as Error).message}`;
+      error.hidden = false;
+    } finally {
+      button.disabled = false;
+      render();
+      updateSavedLink();
+    }
+  });
+  wrap.append(button, error);
+  return wrap;
+}
+
+function showResult(word: string, sentence: string, r: Lookup): void {
   const meta = [r.lemma !== word ? `→ ${r.lemma}` : "", r.pos, r.register].filter(Boolean).join(" · ");
   popupBody.replaceChildren(
     popupLine("popup-word", word),
@@ -163,6 +215,7 @@ function showResult(word: string, r: Lookup): void {
     popupLine("popup-meaning", r.meaning),
     popupLine("popup-gloss", r.gloss),
     popupLine("popup-note", r.note),
+    saveButton(word, sentence, r),
   );
 }
 
@@ -194,7 +247,7 @@ async function lookup(word: string, sentence: string): Promise<void> {
       throw new Error(reason);
     }
     const result = (await res.json()) as Lookup;
-    if (lookupInFlight === ctl) showResult(word, result);
+    if (lookupInFlight === ctl) showResult(word, sentence, result);
   } catch (e) {
     if (lookupInFlight !== ctl) return; // superseded or closed: nothing to report
     const message = timedOut
@@ -232,6 +285,8 @@ form.addEventListener("submit", (ev) => {
   history.replaceState(null, "", `?url=${encodeURIComponent(url)}`);
   void loadArticle(url);
 });
+
+void refreshSaved();
 
 const initial = new URLSearchParams(location.search).get("url");
 if (initial) {
