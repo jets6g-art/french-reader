@@ -138,7 +138,7 @@ class ClaudeLookupServiceTest {
         assertThatThrownBy(() -> new ClaudeLookupService("  ").lookup(REQUEST))
                 .isInstanceOfSatisfying(ResponseStatusException.class, e -> {
                     assertThat(e.getStatusCode()).isEqualTo(HttpStatus.SERVICE_UNAVAILABLE);
-                    assertThat(e.getReason()).contains("ANTHROPIC_API_KEY");
+                    assertThat(e.getReason()).contains("CLAUDE_API_ONLY_KEY");
                 });
     }
 

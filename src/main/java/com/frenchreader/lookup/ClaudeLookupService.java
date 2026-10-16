@@ -52,7 +52,10 @@ class ClaudeLookupService implements LookupService {
     private final AnthropicClient client;
 
     @Autowired
-    ClaudeLookupService(@Value("${anthropic.api-key:}") String apiKey) {
+    // Named directly rather than via a property: a property called anthropic.api-key would also be
+    // filled from an unrelated ANTHROPIC_API_KEY environment variable (Spring's relaxed binding),
+    // which would override this one.
+    ClaudeLookupService(@Value("${CLAUDE_API_ONLY_KEY:}") String apiKey) {
         this(apiKey == null || apiKey.isBlank() ? null : AnthropicOkHttpClient.builder()
                 .apiKey(apiKey)
                 .timeout(TIMEOUT)
@@ -68,7 +71,7 @@ class ClaudeLookupService implements LookupService {
     public LookupResponse lookup(LookupRequest request) {
         if (client == null) {
             throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE,
-                    "Lookup is not configured: set the ANTHROPIC_API_KEY environment variable and restart");
+                    "Lookup is not configured: set the CLAUDE_API_ONLY_KEY environment variable and restart");
         }
         StructuredMessageCreateParams<LookupResponse> params = MessageCreateParams.builder()
                 .model(MODEL)
