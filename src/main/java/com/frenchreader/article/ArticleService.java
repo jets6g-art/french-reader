@@ -43,7 +43,7 @@ public class ArticleService {
         String key = cacheKey(uri);
         Optional<FileBackedCache.Entry<Article>> cached = cache.get(key);
         if (cached.isPresent() && age(cached.get()).compareTo(ttl) < 0) {
-            return cached.get().value();
+            return withTitleTokens(cached.get().value());
         }
         try {
             Article fresh = fetchAndExtract(uri);
@@ -52,7 +52,7 @@ public class ArticleService {
         } catch (ResponseStatusException e) {
             if (cached.isPresent()) {
                 log.warn("Source fetch failed ({}); serving cached copy of {}", e.getStatusCode(), key);
-                return cached.get().value();
+                return withTitleTokens(cached.get().value());
             }
             throw e;
         }
@@ -65,8 +65,17 @@ public class ArticleService {
             throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,
                     "No article content found at that URL");
         }
-        return new Article(extracted.title(), SourcePolicy.SOURCE_NAME, uri.toString(),
-                toSentences(extracted.blocks()));
+        List<Token> titleTokens = FrenchTokenizer.tokenize(extracted.title(), 0);
+        return new Article(extracted.title(), titleTokens, SourcePolicy.SOURCE_NAME, uri.toString(),
+                toSentences(extracted.blocks(), titleTokens.size()));
+    }
+
+    /** Copies cached before titleTokens existed get them now, without a refetch. */
+    private static Article withTitleTokens(Article a) {
+        if (a.titleTokens() != null) {
+            return a;
+        }
+        return new Article(a.title(), FrenchTokenizer.tokenize(a.title(), 0), a.source(), a.url(), a.sentences());
     }
 
     private static Duration age(FileBackedCache.Entry<Article> entry) {
@@ -79,9 +88,9 @@ public class ArticleService {
                 + (uri.getRawQuery() != null ? "?" + uri.getRawQuery() : "");
     }
 
-    static List<Sentence> toSentences(List<RadioCanadaExtractor.Block> blocks) {
+    static List<Sentence> toSentences(List<RadioCanadaExtractor.Block> blocks, int firstIdx) {
         List<Sentence> sentences = new ArrayList<>();
-        int idx = 0;
+        int idx = firstIdx;
         int paragraph = 0;
         for (RadioCanadaExtractor.Block block : blocks) {
             List<Token> tokens = FrenchTokenizer.tokenize(block.text(), idx);

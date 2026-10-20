@@ -16,6 +16,7 @@ interface Sentence {
 
 interface Article {
   title: string;
+  titleTokens: Token[];
   source: string;
   url: string;
   sentences: Sentence[];
@@ -31,6 +32,7 @@ const popupClose = document.getElementById("popup-close") as HTMLButtonElement;
 const savedLink = document.getElementById("saved-link") as HTMLAnchorElement;
 
 const HAS_WORD_CHAR = /[\p{L}\p{N}]/u;
+const TITLE_SID = -1; // article sentence ids start at 0
 const LOOKUP_TIMEOUT_MS = 10_000; // matches the backend's 10s LLM budget
 
 // Sentences by id for the current article, so a click can recover its containing sentence.
@@ -95,11 +97,14 @@ async function loadArticle(url: string): Promise<void> {
 function render(article: Article): void {
   document.title = `${article.title} — French Reader`;
   sentencesById = new Map(article.sentences.map((s) => [s.id, s]));
+  // The title is one clickable "sentence" with a reserved id, so word clicks treat it like the body.
+  const titleSentence: Sentence = { id: TITLE_SID, paragraph: -1, kind: "heading", tokens: article.titleTokens };
+  sentencesById.set(TITLE_SID, titleSentence);
   articleUrl = article.url;
 
   const header = document.createElement("header");
   const h1 = document.createElement("h1");
-  h1.textContent = article.title;
+  h1.append(renderSentence(titleSentence));
   const source = document.createElement("p");
   source.className = "source";
   source.textContent = article.source;

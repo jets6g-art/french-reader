@@ -30,7 +30,7 @@ class ArticleControllerTest {
     @Test
     void returnsTokenizedArticle() throws Exception {
         MockMvc mvc = mvcFor("""
-                <h1>Titre</h1>
+                <h1>Titre de l'année</h1>
                 <div class="flow-root"><div>
                   <p>L'entreprise a gagné. Tant mieux!</p>
                   <h2>Suite</h2>
@@ -39,7 +39,11 @@ class ArticleControllerTest {
 
         mvc.perform(get("/api/v1/article").param("url", URL))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.title").value("Titre"))
+                .andExpect(jsonPath("$.title").value("Titre de l'année"))
+                .andExpect(jsonPath("$.titleTokens[0].text").value("Titre"))
+                .andExpect(jsonPath("$.titleTokens[2].text").value("l'"))
+                .andExpect(jsonPath("$.titleTokens[3].text").value("année"))
+                .andExpect(jsonPath("$.sentences[0].tokens[0].idx").value(4))
                 .andExpect(jsonPath("$.source").value("Radio-Canada"))
                 .andExpect(jsonPath("$.url").value(URL))
                 .andExpect(jsonPath("$.sentences.length()").value(4))
@@ -47,7 +51,7 @@ class ArticleControllerTest {
                 .andExpect(jsonPath("$.sentences[0].kind").value("p"))
                 .andExpect(jsonPath("$.sentences[0].tokens[0].text").value("L'"))
                 .andExpect(jsonPath("$.sentences[0].tokens[0].ws").value(""))
-                .andExpect(jsonPath("$.sentences[0].tokens[1].idx").value(1))
+                .andExpect(jsonPath("$.sentences[0].tokens[1].idx").value(5))
                 .andExpect(jsonPath("$.sentences[1].paragraph").value(0))
                 .andExpect(jsonPath("$.sentences[2].paragraph").value(1))
                 .andExpect(jsonPath("$.sentences[2].kind").value("heading"));
