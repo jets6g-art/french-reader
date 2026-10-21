@@ -36,6 +36,7 @@ class ClaudeLookupServiceTest {
     private final AtomicReference<String> lastApiKey = new AtomicReference<>();
     private volatile int status = 200;
     private volatile String responseBody;
+    private volatile String contentType = "application/json";
     private volatile long delayMs = 0;
 
     @BeforeEach
@@ -50,7 +51,7 @@ class ClaudeLookupServiceTest {
                 // client gave up
             }
             byte[] out = responseBody.getBytes(StandardCharsets.UTF_8);
-            exchange.getResponseHeaders().add("Content-Type", "application/json");
+            exchange.getResponseHeaders().add("Content-Type", contentType);
             try {
                 exchange.sendResponseHeaders(status, out.length);
                 exchange.getResponseBody().write(out);
@@ -131,6 +132,53 @@ class ClaudeLookupServiceTest {
         JsonNode schema = body.path("output_config").path("format").path("schema").path("properties");
         assertThat(schema.fieldNames()).toIterable()
                 .containsExactlyInAnyOrder("lemma", "pos", "meaning", "register", "gloss", "note");
+    }
+
+    /** Anthropic's streaming wire format: the reply text arrives as several text_delta events. */
+    private void streamReply(String... textChunks) {
+        StringBuilder sse = new StringBuilder();
+        sse.append(event("message_start", "{\"type\":\"message_start\",\"message\":{\"id\":\"msg_1\","
+                + "\"type\":\"message\",\"role\":\"assistant\",\"model\":\"claude-haiku-5-5\",\"content\":[],"
+                + "\"stop_reason\":null,\"stop_sequence\":null,\"usage\":{\"input_tokens\":10,\"output_tokens\":1}}}"));
+        sse.append(event("content_block_start", "{\"type\":\"content_block_start\",\"index\":0,"
+                + "\"content_block\":{\"type\":\"text\",\"text\":\"\"}}"));
+        for (String chunk : textChunks) {
+            sse.append(event("content_block_delta", "{\"type\":\"content_block_delta\",\"index\":0,"
+                    + "\"delta\":{\"type\":\"text_delta\",\"text\":" + JSON.valueToTree(chunk) + "}}"));
+        }
+        sse.append(event("content_block_stop", "{\"type\":\"content_block_stop\",\"index\":0}"));
+        sse.append(event("message_delta", "{\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\","
+                + "\"stop_sequence\":null},\"usage\":{\"output_tokens\":20}}"));
+        sse.append(event("message_stop", "{\"type\":\"message_stop\"}"));
+        status = 200;
+        contentType = "text/event-stream";
+        responseBody = sse.toString();
+    }
+
+    private static String event(String name, String json) {
+        return "event: " + name + "\ndata: " + json + "\n\n";
+    }
+
+    @Test
+    void streamingReportsFieldsAsTheyCompleteAndReturnsTheFullAnswer() throws Exception {
+        streamReply("{\"lemma\":\"toutef", "ois\",\"pos\":\"adverb\",\"meaning\":\"Introduit une restriction.\",",
+                "\"register\":\"soutenu\",\"gloss\":\"however\",", "\"note\":\"Opens the sentence.\"}");
+        java.util.List<String> seen = new java.util.ArrayList<>();
+
+        LookupResponse r = service(Duration.ofSeconds(5)).lookup(REQUEST, (k, v) -> seen.add(k + "=" + v));
+
+        assertThat(seen).containsExactly("lemma=toutefois", "pos=adverb", "meaning=Introduit une restriction.",
+                "register=soutenu", "gloss=however", "note=Opens the sentence.");
+        assertThat(r.gloss()).isEqualTo("however");
+        assertThat(JSON.readTree(lastBody.get()).path("stream").asBoolean()).isTrue();
+    }
+
+    @Test
+    void streamedReplyCutOffMidJsonIs502() {
+        streamReply("{\"lemma\":\"toutefois\",\"pos\":\"adv");
+        assertThatThrownBy(() -> service(Duration.ofSeconds(5)).lookup(REQUEST, (k, v) -> { }))
+                .isInstanceOfSatisfying(ResponseStatusException.class,
+                        e -> assertThat(e.getStatusCode()).isEqualTo(HttpStatus.BAD_GATEWAY));
     }
 
     @Test

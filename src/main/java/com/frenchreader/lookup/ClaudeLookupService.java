@@ -2,6 +2,7 @@ package com.frenchreader.lookup;
 
 import java.io.InterruptedIOException;
 import java.time.Duration;
+import java.util.function.BiConsumer;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -13,14 +14,20 @@ import org.springframework.web.server.ResponseStatusException;
 
 import com.anthropic.client.AnthropicClient;
 import com.anthropic.client.okhttp.AnthropicOkHttpClient;
+import com.anthropic.core.http.StreamResponse;
 import com.anthropic.errors.AnthropicException;
+import com.anthropic.errors.AnthropicInvalidDataException;
 import com.anthropic.errors.AnthropicIoException;
 import com.anthropic.errors.AnthropicServiceException;
 import com.anthropic.errors.RateLimitException;
 import com.anthropic.errors.UnauthorizedException;
 import com.anthropic.models.messages.MessageCreateParams;
+import com.anthropic.models.messages.RawMessageStreamEvent;
 import com.anthropic.models.messages.StructuredMessageCreateParams;
 import com.anthropic.models.messages.ThinkingConfigDisabled;
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.DeserializationFeature;
+import com.fasterxml.jackson.databind.ObjectMapper;
 
 /**
  * One single-shot Claude call per lookup. Haiku with thinking off keeps the reply fast, and the
@@ -35,6 +42,8 @@ class ClaudeLookupService implements LookupService {
     static final Duration TIMEOUT = Duration.ofSeconds(10);
 
     private static final Logger log = LoggerFactory.getLogger(ClaudeLookupService.class);
+    private static final ObjectMapper REPLY = new ObjectMapper()
+            .configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
 
     private static final String SYSTEM = """
             You are a French tutor helping an English-speaking Canadian public servant prepare for the \
@@ -69,6 +78,11 @@ class ClaudeLookupService implements LookupService {
 
     @Override
     public LookupResponse lookup(LookupRequest request) {
+        return lookup(request, null);
+    }
+
+    @Override
+    public LookupResponse lookup(LookupRequest request, BiConsumer<String, String> onField) {
         if (client == null) {
             throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE,
                     "Lookup is not configured: set the CLAUDE_API_ONLY_KEY environment variable and restart");
@@ -83,11 +97,13 @@ class ClaudeLookupService implements LookupService {
                         + request.sentence().strip() + "</sentence>")
                 .build();
         try {
-            LookupResponse result = client.messages().create(params).content().stream()
-                    .flatMap(block -> block.text().stream())
-                    .map(typed -> typed.text())
-                    .findFirst()
-                    .orElse(null);
+            LookupResponse result = onField == null
+                    ? client.messages().create(params).content().stream()
+                            .flatMap(block -> block.text().stream())
+                            .map(typed -> typed.text())
+                            .findFirst()
+                            .orElse(null)
+                    : stream(params, onField);
             if (result == null || result.meaning() == null || result.meaning().isBlank()) {
                 throw new ResponseStatusException(HttpStatus.BAD_GATEWAY, "Claude returned no explanation");
             }
@@ -112,6 +128,30 @@ class ClaudeLookupService implements LookupService {
             // e.g. the reply was cut off at max_tokens or did not match the schema
             log.error("Unusable Claude reply: {}", e.getMessage());
             throw new ResponseStatusException(HttpStatus.BAD_GATEWAY, "Claude returned an unusable reply");
+        }
+    }
+
+    /**
+     * Streams the reply, reporting each string field as it completes, then parses the whole text
+     * as the authority. A reply cut off at max_tokens fails that parse and becomes a 502 upstream.
+     */
+    private LookupResponse stream(StructuredMessageCreateParams<LookupResponse> params,
+                                  BiConsumer<String, String> onField) {
+        StringBuilder text = new StringBuilder();
+        JsonStringFields fields = new JsonStringFields(onField);
+        try (StreamResponse<RawMessageStreamEvent> events = client.messages().createStreaming(params.rawParams())) {
+            events.stream()
+                    .flatMap(e -> e.contentBlockDelta().stream())
+                    .flatMap(e -> e.delta().text().stream())
+                    .forEach(delta -> {
+                        text.append(delta.text());
+                        fields.feed(delta.text());
+                    });
+        }
+        try {
+            return REPLY.readValue(text.toString(), LookupResponse.class);
+        } catch (JsonProcessingException e) {
+            throw new AnthropicInvalidDataException("Reply is not the expected JSON", e);
         }
     }
 

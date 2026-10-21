@@ -1,4 +1,4 @@
-import { deleteSaved, listSaved, saveItem } from "./api.js";
+import { deleteSaved, listSaved, saveItem, streamLookup } from "./api.js";
 import type { Lookup } from "./types.js";
 
 interface Token {
@@ -212,16 +212,23 @@ function saveButton(word: string, sentence: string, r: Lookup): HTMLElement {
   return wrap;
 }
 
+function resultLines(word: string, r: Partial<Lookup>): HTMLElement[] {
+  const meta = [r.lemma && r.lemma !== word ? `→ ${r.lemma}` : "", r.pos, r.register].filter(Boolean).join(" · ");
+  const lines = [popupLine("popup-word", word)];
+  if (meta) lines.push(popupLine("popup-muted", meta));
+  if (r.meaning) lines.push(popupLine("popup-meaning", r.meaning));
+  if (r.gloss) lines.push(popupLine("popup-gloss", r.gloss));
+  if (r.note) lines.push(popupLine("popup-note", r.note));
+  return lines;
+}
+
+/** What has arrived so far, with a marker that the rest is still coming. */
+function showPartial(word: string, fields: Partial<Lookup>): void {
+  popupBody.replaceChildren(...resultLines(word, fields), popupLine("popup-muted", "…"));
+}
+
 function showResult(word: string, sentence: string, r: Lookup): void {
-  const meta = [r.lemma !== word ? `→ ${r.lemma}` : "", r.pos, r.register].filter(Boolean).join(" · ");
-  popupBody.replaceChildren(
-    popupLine("popup-word", word),
-    popupLine("popup-muted", meta),
-    popupLine("popup-meaning", r.meaning),
-    popupLine("popup-gloss", r.gloss),
-    popupLine("popup-note", r.note),
-    saveButton(word, sentence, r),
-  );
+  popupBody.replaceChildren(...resultLines(word, r), saveButton(word, sentence, r));
 }
 
 async function lookup(word: string, sentence: string): Promise<void> {
@@ -235,23 +242,11 @@ async function lookup(word: string, sentence: string): Promise<void> {
   }, LOOKUP_TIMEOUT_MS);
   showLoading(word);
   try {
-    const res = await fetch("/api/v1/lookup", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ word, sentence, articleUrl }),
-      signal: ctl.signal,
+    const partial: Partial<Lookup> = {};
+    const result = await streamLookup({ word, sentence, articleUrl }, ctl.signal, (name, value) => {
+      partial[name] = value;
+      if (lookupInFlight === ctl) showPartial(word, partial);
     });
-    if (!res.ok) {
-      let reason = `HTTP ${res.status}`;
-      try {
-        const body = await res.json();
-        if (body.message) reason = body.message;
-      } catch {
-        // non-JSON error body; keep the status line
-      }
-      throw new Error(reason);
-    }
-    const result = (await res.json()) as Lookup;
     if (lookupInFlight === ctl) showResult(word, sentence, result);
   } catch (e) {
     if (lookupInFlight !== ctl) return; // superseded or closed: nothing to report

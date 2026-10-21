@@ -1,6 +1,8 @@
 package com.frenchreader.lookup;
 
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.asyncDispatch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.request;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -33,6 +35,55 @@ class LookupControllerTest {
                 .andExpect(jsonPath("$.register").isNotEmpty())
                 .andExpect(jsonPath("$.gloss").isNotEmpty())
                 .andExpect(jsonPath("$.note").isNotEmpty());
+    }
+
+    private String stream(LookupService service, String json) throws Exception {
+        MockMvc m = MockMvcBuilders.standaloneSetup(new LookupController(service)).build();
+        var started = m.perform(post("/api/v1/lookup/stream").contentType(MediaType.APPLICATION_JSON).content(json))
+                .andExpect(request().asyncStarted()).andReturn();
+        return m.perform(asyncDispatch(started)).andReturn().getResponse().getContentAsString();
+    }
+
+    private static final String BODY = "{\"word\":\"toutefois\",\"sentence\":\"Toutefois, il est parti.\"}";
+
+    @Test
+    void streamSendsFieldEventsThenDone() throws Exception {
+        LookupService streaming = new LookupService() {
+            @Override
+            public LookupResponse lookup(LookupRequest req) {
+                return STUB.lookup(req);
+            }
+
+            @Override
+            public LookupResponse lookup(LookupRequest req, java.util.function.BiConsumer<String, String> onField) {
+                onField.accept("lemma", req.word());
+                onField.accept("pos", "adverb");
+                return lookup(req);
+            }
+        };
+        String out = stream(streaming, BODY);
+
+        org.assertj.core.api.Assertions.assertThat(out)
+                .contains("event:field", "{\"name\":\"lemma\",\"value\":\"toutefois\"}", "{\"name\":\"pos\",\"value\":\"adverb\"}")
+                .contains("event:done", "\"gloss\":\"gloss\"");
+        org.assertj.core.api.Assertions.assertThat(out.indexOf("event:field")).isLessThan(out.indexOf("event:done"));
+    }
+
+    @Test
+    void streamReportsFailuresAsAnErrorEvent() throws Exception {
+        String out = stream(req -> {
+            throw new org.springframework.web.server.ResponseStatusException(
+                    org.springframework.http.HttpStatus.GATEWAY_TIMEOUT, "Claude did not answer within 10s");
+        }, BODY);
+
+        org.assertj.core.api.Assertions.assertThat(out)
+                .contains("event:error", "\"status\":504", "Claude did not answer within 10s");
+    }
+
+    @Test
+    void streamRejectsBadInputWithPlain400() throws Exception {
+        mvc.perform(post("/api/v1/lookup/stream").contentType(MediaType.APPLICATION_JSON)
+                .content("{\"word\":\"\",\"sentence\":\"x\"}")).andExpect(status().isBadRequest());
     }
 
     @Test

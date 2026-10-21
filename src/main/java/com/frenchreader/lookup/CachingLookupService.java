@@ -2,6 +2,7 @@ package com.frenchreader.lookup;
 
 import java.text.Normalizer;
 import java.util.Locale;
+import java.util.function.BiConsumer;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -38,6 +39,12 @@ class CachingLookupService implements LookupService {
 
     @Override
     public LookupResponse lookup(LookupRequest request) {
+        return lookup(request, null);
+    }
+
+    /** A cache hit reports no fields; the caller gets the whole answer back at once. */
+    @Override
+    public LookupResponse lookup(LookupRequest request, BiConsumer<String, String> onField) {
         String word = request.word().strip();
         boolean singleWord = word.chars().noneMatch(Character::isWhitespace);
         String key = key(word);
@@ -48,7 +55,7 @@ class CachingLookupService implements LookupService {
                 return hit.get().value();
             }
         }
-        LookupResponse result = delegate.lookup(request);
+        LookupResponse result = onField == null ? delegate.lookup(request) : delegate.lookup(request, onField);
         if (singleWord && isContextFree(result)) {
             cache.put(key, result);
         }
