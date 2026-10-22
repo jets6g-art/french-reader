@@ -243,6 +243,19 @@ articleEl.addEventListener("click", (ev) => {
     const sentenceText = sentence.tokens.map((t) => t.text + t.ws).join("").trim();
     void lookup(word.textContent ?? "", sentenceText);
 });
+// The popup covers the bottom of the screen. While it is open, pad the page by its height so the end
+// of the article can still be scrolled above it, and lift the selected word out from under it. This
+// reruns whenever the popup changes size, including while a streamed answer fills it in.
+const POPUP_GAP_PX = 16;
+new ResizeObserver(() => {
+    const height = popupEl.hidden ? 0 : popupEl.offsetHeight;
+    document.body.style.paddingBottom = height ? `${height + POPUP_GAP_PX}px` : "";
+    if (!height || !selected)
+        return;
+    const overlap = selected.getBoundingClientRect().bottom - (window.innerHeight - height - POPUP_GAP_PX);
+    if (overlap > 0)
+        window.scrollBy({ top: overlap, behavior: "smooth" });
+}).observe(popupEl);
 popupClose.addEventListener("click", clearSelection);
 document.addEventListener("keydown", (ev) => {
     if (ev.key === "Escape")
