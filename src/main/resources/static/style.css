@@ -6,6 +6,8 @@
   --hover: #e6eefb;
   --selected: #ffe08a;
   --border: #dedbd0;
+  --translation-bg: #eef4f0;
+  --translation-edge: #4f8a68;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -17,6 +19,8 @@
     --hover: #26354d;
     --selected: #6b5a1c;
     --border: #34353a;
+    --translation-bg: #1d2a23;
+    --translation-edge: #6fae8a;
   }
 }
 
@@ -169,6 +173,36 @@ body {
   padding: 0.2rem 0.6rem;
   font: inherit;
   color: var(--muted);
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+
+/* Paragraph translations: an aid beside the article, not part of it — different face, size,
+   colour and a tinted box, so they never read as the original text. */
+.translation {
+  margin: -0.25rem 0 1.25rem;
+  padding: 0.6rem 0.9rem;
+  background: var(--translation-bg);
+  border-left: 3px solid var(--translation-edge);
+  border-radius: 0 6px 6px 0;
+  font: 0.95rem/1.5 system-ui, sans-serif;
+  font-style: normal;
+}
+.translation p { margin: 0 0 0.3rem; }
+.translation p:last-child { margin-bottom: 0; }
+.translation-label {
+  color: var(--translation-edge);
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.translation-pending { color: var(--muted); }
+.translation button {
+  padding: 0.3rem 0.8rem;
+  font: inherit;
+  color: var(--fg);
   background: transparent;
   border: 1px solid var(--border);
   border-radius: 6px;

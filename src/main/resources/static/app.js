@@ -1,4 +1,4 @@
-import { deleteSaved, listSaved, saveItem, streamLookup } from "./api.js";
+import { deleteSaved, listSaved, saveItem, streamLookup, translateParagraph } from "./api.js";
 const form = document.getElementById("load-form");
 const urlInput = document.getElementById("url");
 const statusEl = document.getElementById("status");
@@ -77,6 +77,7 @@ function render(article) {
     articleUrl = article.url;
     const header = document.createElement("header");
     const h1 = document.createElement("h1");
+    h1.dataset.para = String(titleSentence.paragraph);
     h1.append(renderSentence(titleSentence));
     const source = document.createElement("p");
     source.className = "source";
@@ -89,6 +90,7 @@ function render(article) {
         if (sentence.paragraph !== currentParagraph) {
             currentParagraph = sentence.paragraph;
             current = document.createElement(sentence.kind === "heading" ? "h2" : sentence.kind === "quote" ? "blockquote" : "p");
+            current.dataset.para = String(currentParagraph);
             blocks.push(current);
         }
         current.append(renderSentence(sentence));
@@ -230,18 +232,76 @@ async function lookup(word, sentence) {
         clearTimeout(timer);
     }
 }
+// A single click waits this long before looking the word up, so the first click of a double-click
+// (which translates the paragraph instead) never shows the word popup. Most double-clicks land well
+// inside it; a slower one still works, it just flashes the popup first.
+const DOUBLE_CLICK_MS = 300;
+let pendingClick;
 articleEl.addEventListener("click", (ev) => {
+    if (ev.detail > 1)
+        return; // second click of a double-click: that one translates instead
     const word = ev.target.closest(".w");
     if (!word)
         return;
     const sentence = sentencesById.get(Number(word.closest(".s").dataset.sid));
     if (!sentence)
         return;
-    selected?.classList.remove("selected");
-    selected = word;
-    word.classList.add("selected");
-    const sentenceText = sentence.tokens.map((t) => t.text + t.ws).join("").trim();
-    void lookup(word.textContent ?? "", sentenceText);
+    clearTimeout(pendingClick);
+    pendingClick = setTimeout(() => {
+        selected?.classList.remove("selected");
+        selected = word;
+        word.classList.add("selected");
+        const sentenceText = sentence.tokens.map((t) => t.text + t.ws).join("").trim();
+        void lookup(word.textContent ?? "", sentenceText);
+    }, DOUBLE_CLICK_MS);
+});
+// Double-clicking a word translates its whole paragraph into a box just below it, which then stays.
+// The first click of the pair is still waiting (see DOUBLE_CLICK_MS): cancel it.
+function paragraphText(para) {
+    return [...sentencesById.values()]
+        .filter((s) => s.paragraph === para)
+        .sort((a, b) => a.id - b.id)
+        .map((s) => s.tokens.map((t) => t.text + t.ws).join(""))
+        .join("")
+        .trim();
+}
+async function fillTranslation(box, paragraph) {
+    const label = popupLine("translation-label", "English translation");
+    box.replaceChildren(label, popupLine("translation-pending", "Translating…"));
+    try {
+        const text = await translateParagraph(paragraph, articleUrl);
+        box.replaceChildren(label, popupLine("translation-text", text));
+    }
+    catch (e) {
+        const timedOut = e instanceof DOMException && e.name === "TimeoutError";
+        const retry = document.createElement("button");
+        retry.type = "button";
+        retry.textContent = "Retry";
+        retry.addEventListener("click", () => void fillTranslation(box, paragraph));
+        const message = timedOut ? "Translation timed out." : `Translation failed: ${e.message}`;
+        box.replaceChildren(label, popupLine("popup-error", message), retry);
+    }
+}
+// Keep a double-click from also selecting (highlighting) the word's text.
+articleEl.addEventListener("mousedown", (ev) => {
+    if (ev.detail > 1 && ev.target.closest(".w"))
+        ev.preventDefault();
+});
+articleEl.addEventListener("dblclick", (ev) => {
+    const word = ev.target.closest(".w");
+    const block = word?.closest("[data-para]");
+    if (!block)
+        return;
+    clearTimeout(pendingClick);
+    clearSelection(); // in case a slow double-click let the lookup start anyway
+    // Already translated (or translating): keep it; a failed one has its own Retry button.
+    if (block.nextElementSibling?.classList.contains("translation"))
+        return;
+    const box = document.createElement("div");
+    box.className = "translation";
+    box.lang = "en";
+    block.after(box);
+    void fillTranslation(box, paragraphText(Number(block.dataset.para)));
 });
 // The popup covers the bottom of the screen. While it is open, pad the page by its height so the end
 // of the article can still be scrolled above it, and lift the selected word out from under it. This

@@ -86,3 +86,17 @@ export async function streamLookup(
   }
   throw new Error("The lookup ended before an answer arrived");
 }
+
+const TRANSLATE_TIMEOUT_MS = 25_000; // the server allows Claude 20s for a whole paragraph
+
+/** English translation of one paragraph (POST /translate). */
+export async function translateParagraph(paragraph: string, articleUrl: string): Promise<string> {
+  const res = await fetch("/api/v1/translate", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ paragraph, articleUrl }),
+    signal: AbortSignal.timeout(TRANSLATE_TIMEOUT_MS),
+  });
+  if (!res.ok) throw new Error(await errorReason(res));
+  return ((await res.json()) as { translation: string }).translation;
+}
