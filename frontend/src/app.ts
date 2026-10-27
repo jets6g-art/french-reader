@@ -1,5 +1,5 @@
 import { deleteSaved, listSaved, saveItem, streamLookup, translateParagraph } from "./api.js";
-import type { Lookup } from "./types.js";
+import type { Lookup, LookupResult } from "./types.js";
 
 interface Token {
   idx: number;
@@ -164,6 +164,7 @@ function popupLine(className: string, text: string): HTMLElement {
 }
 
 function showLoading(word: string): void {
+  popupBody.classList.remove("has-idiom");
   popupBody.replaceChildren(popupLine("popup-word", word), popupLine("popup-muted", "Looking up…"));
   popupEl.hidden = false;
 }
@@ -173,6 +174,7 @@ function showError(word: string, message: string, retry: () => void): void {
   button.type = "button";
   button.textContent = "Retry";
   button.addEventListener("click", retry);
+  popupBody.classList.remove("has-idiom");
   popupBody.replaceChildren(popupLine("popup-word", word), popupLine("popup-error", message), button);
 }
 
@@ -214,7 +216,7 @@ function saveButton(word: string, sentence: string, r: Lookup): HTMLElement {
   return wrap;
 }
 
-function resultLines(word: string, r: Partial<Lookup>): HTMLElement[] {
+function wordLines(word: string, r: Partial<LookupResult>): HTMLElement[] {
   const meta = [r.lemma && r.lemma !== word ? `→ ${r.lemma}` : "", r.pos, r.register].filter(Boolean).join(" · ");
   const lines = [popupLine("popup-word", word)];
   if (meta) lines.push(popupLine("popup-muted", meta));
@@ -224,13 +226,52 @@ function resultLines(word: string, r: Partial<Lookup>): HTMLElement[] {
   return lines;
 }
 
-/** What has arrived so far, with a marker that the rest is still coming. */
-function showPartial(word: string, fields: Partial<Lookup>): void {
-  popupBody.replaceChildren(...resultLines(word, fields), popupLine("popup-muted", "…"));
+/** The idiom the word belongs to, below the word itself; nothing when there is none. */
+function idiomSection(r: Partial<LookupResult>, save?: HTMLElement): HTMLElement[] {
+  if (!r.idiom) return [];
+  const section = document.createElement("div");
+  section.className = "popup-idiom";
+  section.append(popupLine("popup-idiom-label", "Part of the idiom"), popupLine("popup-word", r.idiom));
+  if (r.idiomMeaning) section.append(popupLine("popup-meaning", r.idiomMeaning));
+  if (r.idiomGloss) section.append(popupLine("popup-gloss", r.idiomGloss));
+  if (r.idiomNote) section.append(popupLine("popup-note", r.idiomNote));
+  if (save) section.append(save);
+  return [section];
 }
 
-function showResult(word: string, sentence: string, r: Lookup): void {
-  popupBody.replaceChildren(...resultLines(word, r), saveButton(word, sentence, r));
+/** The word and the idiom are saved as separate entries, each with its own Save button. */
+const wordEntry = (r: LookupResult): Lookup => ({
+  lemma: r.lemma, pos: r.pos, meaning: r.meaning, register: r.register, gloss: r.gloss, note: r.note,
+});
+const idiomEntry = (r: LookupResult): Lookup => ({
+  lemma: r.idiom ?? "", pos: "idiom", meaning: r.idiomMeaning ?? "", register: "",
+  gloss: r.idiomGloss ?? "", note: r.idiomNote ?? "",
+});
+
+/** What has arrived so far, with a marker that the rest is still coming. */
+/**
+ * Fills the popup with the word's column and, when there is one, the idiom's column beside it
+ * (side by side keeps the popup about as tall as a word-only answer; see .has-idiom in style.css).
+ */
+function showColumns(wordColumn: HTMLElement[], idiom: HTMLElement[]): void {
+  popupBody.classList.toggle("has-idiom", idiom.length > 0);
+  if (!idiom.length) {
+    popupBody.replaceChildren(...wordColumn);
+    return;
+  }
+  const word = document.createElement("div");
+  word.className = "popup-word-col";
+  word.append(...wordColumn);
+  popupBody.replaceChildren(word, ...idiom);
+}
+
+function showPartial(word: string, fields: Partial<LookupResult>): void {
+  showColumns([...wordLines(word, fields), popupLine("popup-muted", "…")], idiomSection(fields));
+}
+
+function showResult(word: string, sentence: string, r: LookupResult): void {
+  const idiomSave = r.idiom && r.idiomMeaning ? saveButton(word, sentence, idiomEntry(r)) : undefined;
+  showColumns([...wordLines(word, r), saveButton(word, sentence, wordEntry(r))], idiomSection(r, idiomSave));
 }
 
 async function lookup(word: string, sentence: string): Promise<void> {
@@ -244,7 +285,7 @@ async function lookup(word: string, sentence: string): Promise<void> {
   }, LOOKUP_TIMEOUT_MS);
   showLoading(word);
   try {
-    const partial: Partial<Lookup> = {};
+    const partial: Partial<LookupResult> = {};
     const result = await streamLookup({ word, sentence, articleUrl }, ctl.signal, (name, value) => {
       partial[name] = value;
       if (lookupInFlight === ctl) showPartial(word, partial);

@@ -28,7 +28,7 @@ class CachingLookupServiceTest {
             new CachingLookupService(delegate, new FileBackedCache<>(null, 100, LookupResponse.class));
 
     private static LookupResponse plain(String lemma) {
-        return new LookupResponse(lemma, "adverb", "meaning", "courant", "however", "note");
+        return new LookupResponse(lemma, "adverb", "meaning", "courant", "however", "note", "", "", "", "");
     }
 
     private static LookupRequest req(String word, String sentence) {
@@ -66,10 +66,27 @@ class CachingLookupServiceTest {
 
     @Test
     void idiomAnswersAreNotCachedBecauseTheyDependOnTheSentence() {
-        next = new LookupResponse("faire partie de", "idiom", "m", "courant", "to be part of", "n");
+        next = new LookupResponse("faire partie de", "idiom", "m", "courant", "to be part of", "n", "", "", "", "");
         service.lookup(req("partie", "Ils font partie de l'équipe."));
         service.lookup(req("partie", "Ils font partie de l'équipe."));
         assertThat(calls).hasValue(2);
+    }
+
+    @Test
+    void aWordAnswerThatAlsoFoundAnIdiomIsNotCached() {
+        next = new LookupResponse("partie", "noun (f.)", "m", "courant", "part", "n",
+                "faire partie de", "Être un des éléments de.", "to be part of", "Followed by de.");
+        service.lookup(req("partie", "Ils font partie de l'équipe."));
+        service.lookup(req("partie", "Une partie du budget."));
+        assertThat(calls).hasValue(2);
+    }
+
+    @Test
+    void answersCachedBeforeTheIdiomFieldsExistedStillHit() {
+        next = new LookupResponse("ainsi", "adverb", "m", "courant", "thus", "n", null, null, null, null);
+        service.lookup(req("ainsi", "s1"));
+        service.lookup(req("ainsi", "s2"));
+        assertThat(calls).hasValue(1);
     }
 
     @Test
@@ -82,7 +99,7 @@ class CachingLookupServiceTest {
 
     @Test
     void aOneWordClickThatAnswersWithAnExpressionIsNotCached() {
-        next = new LookupResponse("mettre en œuvre", "verb", "m", "soutenu", "to implement", "n");
+        next = new LookupResponse("mettre en œuvre", "verb", "m", "soutenu", "to implement", "n", "", "", "", "");
         service.lookup(req("mettre", "s"));
         service.lookup(req("mettre", "s"));
         assertThat(calls).hasValue(2);

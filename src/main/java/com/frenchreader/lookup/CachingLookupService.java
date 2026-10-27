@@ -68,10 +68,14 @@ class CachingLookupService implements LookupService {
                 .replace('’', '\'');
     }
 
-    /** A plain one-word entry; an expression or idiom answer is specific to its sentence. */
+    /**
+     * A plain one-word entry. Whether a word belongs to an idiom depends on its sentence ("partie"
+     * in "faire partie de" vs "une partie du budget"), so an answer that found one is not reused.
+     */
     private static boolean isContextFree(LookupResponse r) {
         return r.lemma() != null && !r.lemma().isBlank()
                 && r.lemma().strip().chars().noneMatch(Character::isWhitespace)
-                && (r.pos() == null || !r.pos().toLowerCase(Locale.ROOT).contains("idiom"));
+                && (r.pos() == null || !r.pos().toLowerCase(Locale.ROOT).contains("idiom"))
+                && (r.idiom() == null || r.idiom().isBlank());
     }
 }

@@ -121,7 +121,7 @@ class ClaudeLookupServiceTest {
         assertThat(lastApiKey.get()).isEqualTo("test-key");
         JsonNode body = JSON.readTree(lastBody.get());
         assertThat(body.path("model").asText()).isEqualTo("claude-haiku-5-5");
-        assertThat(body.path("max_tokens").asLong()).isEqualTo(400);
+        assertThat(body.path("max_tokens").asLong()).isEqualTo(700);
         assertThat(body.path("thinking").path("type").asText()).isEqualTo("disabled");
         assertThat(body.has("temperature")).isFalse(); // sampling params are rejected by current models
         assertThat(body.path("messages")).hasSize(1);
@@ -131,7 +131,8 @@ class ClaudeLookupServiceTest {
         // structured output: the schema must carry all six fields
         JsonNode schema = body.path("output_config").path("format").path("schema").path("properties");
         assertThat(schema.fieldNames()).toIterable()
-                .containsExactlyInAnyOrder("lemma", "pos", "meaning", "register", "gloss", "note");
+                .containsExactlyInAnyOrder("lemma", "pos", "meaning", "register", "gloss", "note",
+                        "idiom", "idiomMeaning", "idiomGloss", "idiomNote");
     }
 
     /** Anthropic's streaming wire format: the reply text arrives as several text_delta events. */
@@ -179,6 +180,37 @@ class ClaudeLookupServiceTest {
         assertThatThrownBy(() -> service(Duration.ofSeconds(5)).lookup(REQUEST, (k, v) -> { }))
                 .isInstanceOfSatisfying(ResponseStatusException.class,
                         e -> assertThat(e.getStatusCode()).isEqualTo(HttpStatus.BAD_GATEWAY));
+    }
+
+    private static LookupResponse withIdiom(String lemma, String idiom) {
+        return new LookupResponse(lemma, "x", "m", "courant", "g", "n", idiom, "im", "ig", "in");
+    }
+
+    @Test
+    void keepsTheIdiomWhenTheClickedWordOrItsLemmaIsOneOfItsWords() {
+        assertThat(ClaudeLookupService.withoutUnrelatedIdiom("marché", withIdiom("marché", "mettre en marché")).idiom())
+                .isEqualTo("mettre en marché");
+        assertThat(ClaudeLookupService.withoutUnrelatedIdiom("font", withIdiom("faire", "faire partie de")).idiom())
+                .isEqualTo("faire partie de");
+        assertThat(ClaudeLookupService.withoutUnrelatedIdiom("n’", withIdiom("ne", "ne ... pas")).idiom())
+                .isEqualTo("ne ... pas");
+        assertThat(ClaudeLookupService.withoutUnrelatedIdiom("Même", withIdiom("même", "à même de")).idiom())
+                .isEqualTo("à même de");
+    }
+
+    @Test
+    void dropsAnIdiomTheClickedWordIsNotPartOf() {
+        LookupResponse r = ClaudeLookupService.withoutUnrelatedIdiom("pénurie", withIdiom("pénurie", "faire face à"));
+        assertThat(r.idiom()).isEmpty();
+        assertThat(r.idiomMeaning()).isEmpty();
+        assertThat(r.lemma()).isEqualTo("pénurie");
+        assertThat(r.meaning()).isEqualTo("m");
+    }
+
+    @Test
+    void anAnswerWithoutAnIdiomIsUnchanged() {
+        LookupResponse plain = withIdiom("ainsi", "");
+        assertThat(ClaudeLookupService.withoutUnrelatedIdiom("ainsi", plain)).isSameAs(plain);
     }
 
     @Test

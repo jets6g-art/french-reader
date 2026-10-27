@@ -15,7 +15,7 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 class LookupControllerTest {
 
     private static final LookupService STUB =
-            req -> new LookupResponse(req.word(), "pos", "meaning", "register", "gloss", "note");
+            req -> new LookupResponse(req.word(), "pos", "meaning", "register", "gloss", "note", "", "", "", "");
 
     private final MockMvc mvc = MockMvcBuilders
             .standaloneSetup(new LookupController(STUB)).build();

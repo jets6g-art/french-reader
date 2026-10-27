@@ -132,6 +132,7 @@ function popupLine(className, text) {
     return p;
 }
 function showLoading(word) {
+    popupBody.classList.remove("has-idiom");
     popupBody.replaceChildren(popupLine("popup-word", word), popupLine("popup-muted", "Looking up…"));
     popupEl.hidden = false;
 }
@@ -140,6 +141,7 @@ function showError(word, message, retry) {
     button.type = "button";
     button.textContent = "Retry";
     button.addEventListener("click", retry);
+    popupBody.classList.remove("has-idiom");
     popupBody.replaceChildren(popupLine("popup-word", word), popupLine("popup-error", message), button);
 }
 function saveButton(word, sentence, r) {
@@ -180,7 +182,7 @@ function saveButton(word, sentence, r) {
     wrap.append(button, error);
     return wrap;
 }
-function resultLines(word, r) {
+function wordLines(word, r) {
     const meta = [r.lemma && r.lemma !== word ? `→ ${r.lemma}` : "", r.pos, r.register].filter(Boolean).join(" · ");
     const lines = [popupLine("popup-word", word)];
     if (meta)
@@ -193,12 +195,53 @@ function resultLines(word, r) {
         lines.push(popupLine("popup-note", r.note));
     return lines;
 }
+/** The idiom the word belongs to, below the word itself; nothing when there is none. */
+function idiomSection(r, save) {
+    if (!r.idiom)
+        return [];
+    const section = document.createElement("div");
+    section.className = "popup-idiom";
+    section.append(popupLine("popup-idiom-label", "Part of the idiom"), popupLine("popup-word", r.idiom));
+    if (r.idiomMeaning)
+        section.append(popupLine("popup-meaning", r.idiomMeaning));
+    if (r.idiomGloss)
+        section.append(popupLine("popup-gloss", r.idiomGloss));
+    if (r.idiomNote)
+        section.append(popupLine("popup-note", r.idiomNote));
+    if (save)
+        section.append(save);
+    return [section];
+}
+/** The word and the idiom are saved as separate entries, each with its own Save button. */
+const wordEntry = (r) => ({
+    lemma: r.lemma, pos: r.pos, meaning: r.meaning, register: r.register, gloss: r.gloss, note: r.note,
+});
+const idiomEntry = (r) => ({
+    lemma: r.idiom ?? "", pos: "idiom", meaning: r.idiomMeaning ?? "", register: "",
+    gloss: r.idiomGloss ?? "", note: r.idiomNote ?? "",
+});
 /** What has arrived so far, with a marker that the rest is still coming. */
+/**
+ * Fills the popup with the word's column and, when there is one, the idiom's column beside it
+ * (side by side keeps the popup about as tall as a word-only answer; see .has-idiom in style.css).
+ */
+function showColumns(wordColumn, idiom) {
+    popupBody.classList.toggle("has-idiom", idiom.length > 0);
+    if (!idiom.length) {
+        popupBody.replaceChildren(...wordColumn);
+        return;
+    }
+    const word = document.createElement("div");
+    word.className = "popup-word-col";
+    word.append(...wordColumn);
+    popupBody.replaceChildren(word, ...idiom);
+}
 function showPartial(word, fields) {
-    popupBody.replaceChildren(...resultLines(word, fields), popupLine("popup-muted", "…"));
+    showColumns([...wordLines(word, fields), popupLine("popup-muted", "…")], idiomSection(fields));
 }
 function showResult(word, sentence, r) {
-    popupBody.replaceChildren(...resultLines(word, r), saveButton(word, sentence, r));
+    const idiomSave = r.idiom && r.idiomMeaning ? saveButton(word, sentence, idiomEntry(r)) : undefined;
+    showColumns([...wordLines(word, r), saveButton(word, sentence, wordEntry(r))], idiomSection(r, idiomSave));
 }
 async function lookup(word, sentence) {
     lookupInFlight?.abort();

@@ -207,3 +207,35 @@ body {
   border: 1px solid var(--border);
   border-radius: 6px;
 }
+
+/* The idiom a clicked word belongs to: a second section under the word's own explanation. */
+.popup-idiom {
+  margin-top: 0.75rem;
+  padding-top: 0.6rem;
+  border-top: 1px dashed var(--border);
+}
+.popup-idiom-label {
+  color: var(--accent);
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+/* With an idiom, the word and the idiom sit side by side so the popup stays about as tall as a
+   word-only answer. A phone is too narrow for two columns: there they stack and the popup scrolls. */
+@media (min-width: 641px) {
+  #popup-body.has-idiom {
+    max-width: 68rem;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1.5rem;
+    align-items: start;
+  }
+  #popup-body.has-idiom .popup-idiom {
+    margin-top: 0;
+    padding: 0 0 0 1.5rem;
+    border-top: 0;
+    border-left: 1px dashed var(--border);
+  }
+}

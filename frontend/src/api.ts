@@ -1,4 +1,4 @@
-import type { Lookup, SavedItem } from "./types.js";
+import type { Lookup, LookupResult, SavedItem } from "./types.js";
 
 const TIMEOUT_MS = 10_000;
 
@@ -50,8 +50,8 @@ export async function deleteSaved(id: string): Promise<void> {
 export async function streamLookup(
   body: { word: string; sentence: string; articleUrl: string },
   signal: AbortSignal,
-  onField: (name: keyof Lookup, value: string) => void,
-): Promise<Lookup> {
+  onField: (name: keyof LookupResult, value: string) => void,
+): Promise<LookupResult> {
   const res = await fetch("/api/v1/lookup/stream", {
     method: "POST",
     headers: { "Content-Type": "application/json", Accept: "text/event-stream" },
@@ -80,7 +80,7 @@ export async function streamLookup(
       if (!data.length) continue;
       const payload = JSON.parse(data.join("\n"));
       if (event === "field") onField(payload.name, payload.value);
-      else if (event === "done") return payload as Lookup;
+      else if (event === "done") return payload as LookupResult;
       else if (event === "error") throw new Error(payload.message ?? "Lookup failed");
     }
   }
