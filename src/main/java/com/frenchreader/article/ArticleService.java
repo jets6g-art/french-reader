@@ -4,7 +4,11 @@ import java.net.URI;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import java.util.Optional;
+
+import org.jsoup.nodes.Document;
+import org.jsoup.nodes.Element;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -24,7 +28,8 @@ public class ArticleService {
     private final ArticleFetcher fetcher;
     private final FileBackedCache<Article> cache;
     private final Duration ttl;
-    private final RadioCanadaExtractor extractor = new RadioCanadaExtractor();
+    private final RadioCanadaExtractor radioCanada = new RadioCanadaExtractor();
+    private final GenericExtractor generic = new GenericExtractor();
 
     ArticleService(ArticleFetcher fetcher,
                    @Qualifier("articleCache") FileBackedCache<Article> cache,
@@ -59,15 +64,33 @@ public class ArticleService {
     }
 
     private Article fetchAndExtract(URI uri) {
-        RadioCanadaExtractor.Extracted extracted = extractor.extract(fetcher.fetch(uri));
+        Document doc = fetcher.fetch(uri);
+        RadioCanadaExtractor.Extracted extracted = SourcePolicy.isRadioCanada(uri) ? radioCanada.extract(doc) : null;
+        if (extracted == null || extracted.blocks().isEmpty()) {
+            // Other sites, and Radio-Canada pages not laid out like a news story.
+            extracted = generic.extract(doc);
+        }
         if (extracted.blocks().isEmpty()) {
-            // Page loaded but our selectors found nothing: markup changed, or not an article page.
+            // Page loaded but no readable text was found: not an article page, or rendered by script.
             throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,
                     "No article content found at that URL");
         }
         List<Token> titleTokens = FrenchTokenizer.tokenize(extracted.title(), 0);
-        return new Article(extracted.title(), titleTokens, SourcePolicy.SOURCE_NAME, uri.toString(),
+        return new Article(extracted.title(), titleTokens, sourceName(uri, doc), uri.toString(),
                 toSentences(extracted.blocks(), titleTokens.size()));
+    }
+
+    /** The site's own name when it declares one, else its host without "www.". */
+    static String sourceName(URI uri, Document doc) {
+        if (SourcePolicy.isRadioCanada(uri)) {
+            return "Radio-Canada";
+        }
+        Element site = doc.selectFirst("meta[property=og:site_name]");
+        if (site != null && !site.attr("content").isBlank()) {
+            return site.attr("content").strip();
+        }
+        String host = uri.getHost().toLowerCase(Locale.ROOT);
+        return host.startsWith("www.") ? host.substring(4) : host;
     }
 
     /** Copies cached before titleTokens existed get them now, without a refetch. */
@@ -82,9 +105,13 @@ public class ArticleService {
         return Duration.ofMillis(System.currentTimeMillis() - entry.storedAtMillis());
     }
 
-    /** Same article however it was typed: host case and #fragment don't matter. */
+    /** Same article however it was typed: scheme and host case, a default port and #fragment don't matter. */
     static String cacheKey(URI uri) {
-        return "https://" + uri.getHost().toLowerCase() + uri.getRawPath()
+        String scheme = uri.getScheme().toLowerCase(Locale.ROOT);
+        int port = uri.getPort();
+        boolean defaultPort = port == -1 || port == ("https".equals(scheme) ? 443 : 80);
+        return scheme + "://" + uri.getHost().toLowerCase(Locale.ROOT) + (defaultPort ? "" : ":" + port)
+                + uri.getRawPath()
                 + (uri.getRawQuery() != null ? "?" + uri.getRawQuery() : "");
     }
 

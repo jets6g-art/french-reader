@@ -1,5 +1,6 @@
 package com.frenchreader.article;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -58,14 +59,49 @@ class ArticleControllerTest {
     }
 
     @Test
-    void unsupportedHostIsRejectedBeforeAnyFetch() {
+    void otherSitesUseGenericExtractionAndTheirOwnName() throws Exception {
+        String other = "http://www.example.fr/actualites/42";
+        ArticleFetcher fetcher = mock(ArticleFetcher.class);
+        when(fetcher.fetch(URI.create(other))).thenReturn(Jsoup.parse("""
+                <head><meta property="og:site_name" content="Le Journal"></head>
+                <nav><p>Accueil, Politique, Économie, Culture, Sports et Météo</p></nav>
+                <h1>Un titre</h1>
+                <div class="corps"><p>Le conseil municipal a adopté le budget mardi soir.</p>
+                  <p>Les taxes foncières augmenteront de deux pour cent cette année.</p></div>"""));
+        MockMvc mvc = MockMvcBuilders.standaloneSetup(new ArticleController(
+                new ArticleService(fetcher, memoryCache(), java.time.Duration.ofHours(1)))).build();
+
+        mvc.perform(get("/api/v1/article").param("url", other))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.title").value("Un titre"))
+                .andExpect(jsonPath("$.source").value("Le Journal"))
+                .andExpect(jsonPath("$.sentences.length()").value(2))
+                .andExpect(jsonPath("$.sentences[0].tokens[0].text").value("Le"));
+    }
+
+    @Test
+    void sourceNameFallsBackToTheHost() {
+        assertThat(ArticleService.sourceName(URI.create("https://www.lapresse.ca/x"), Jsoup.parse("")))
+                .isEqualTo("lapresse.ca");
+    }
+
+    @Test
+    void cacheKeyIgnoresCaseDefaultPortAndFragment() {
+        assertThat(ArticleService.cacheKey(URI.create("HTTPS://Ici.Radio-Canada.ca:443/nouvelle/1/x#c")))
+                .isEqualTo("https://ici.radio-canada.ca/nouvelle/1/x");
+        assertThat(ArticleService.cacheKey(URI.create("http://example.fr:8081/a?b=1")))
+                .isEqualTo("http://example.fr:8081/a?b=1");
+    }
+
+    @Test
+    void malformedUrlIsRejectedBeforeAnyFetch() {
         ArticleService service = new ArticleService(mock(ArticleFetcher.class), memoryCache(), java.time.Duration.ofHours(1));
         for (String bad : new String[] {
-                "http://ici.radio-canada.ca/nouvelle/1/x",
-                "https://example.com/nouvelle/1/x",
-                "https://ici.radio-canada.ca@evil.example/x",
-                "https://ici.radio-canada.ca.evil.example/x",
-                "https://localhost:8080/",
+                "ftp://example.fr/x",
+                "file:///C:/Windows/win.ini",
+                "javascript:alert(1)",
+                "https://user:pw@example.fr/x",
+                "https:///nohost",
                 "not a url", ""}) {
             org.assertj.core.api.Assertions.assertThatThrownBy(() -> service.load(bad))
                     .as(bad)

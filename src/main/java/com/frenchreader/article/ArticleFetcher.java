@@ -25,6 +25,7 @@ class ArticleFetcher {
         try {
             for (int hop = 0; hop <= MAX_REDIRECTS; hop++) {
                 // Redirects are followed by hand so every hop is re-checked against SourcePolicy.
+                SourcePolicy.requirePublicAddress(current);
                 Connection.Response res = Jsoup.connect(current.toString())
                         .userAgent(USER_AGENT)
                         .header("Accept-Language", "fr-CA,fr;q=0.9")
@@ -42,6 +43,12 @@ class ArticleFetcher {
                 }
                 if (status == 404) {
                     throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Article not found at source");
+                }
+                if (res.hasHeader("cf-mitigated") || status == 202 || status == 403 || status == 429) {
+                    // A bot check (Cloudflare challenge etc.) answers instead of the page; that is the
+                    // site's choice, so say so rather than retrying or disguising the request.
+                    throw new ResponseStatusException(HttpStatus.BAD_GATEWAY, current.getHost()
+                            + " blocks automated readers (HTTP " + status + "), so this page can't be loaded here");
                 }
                 if (status != 200) {
                     throw new ResponseStatusException(HttpStatus.BAD_GATEWAY, "Source returned HTTP " + status);

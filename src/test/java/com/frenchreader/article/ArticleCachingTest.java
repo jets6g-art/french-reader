@@ -95,7 +95,7 @@ class ArticleCachingTest {
 
     @Test
     void rejectedUrlsNeverReachTheCacheOrTheSource() {
-        assertThatThrownBy(() -> service(Duration.ofHours(1)).load("https://example.com/x"))
+        assertThatThrownBy(() -> service(Duration.ofHours(1)).load("ftp://example.com/x"))
                 .hasMessageContaining("400");
         verify(fetcher, times(0)).fetch(any(URI.class));
     }

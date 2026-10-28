@@ -80,7 +80,7 @@ final class RadioCanadaExtractor {
      * Collapses ASCII whitespace only. Element.text() would also fold NBSP/NNBSP into plain
      * spaces, and French typography depends on them (M.&nbsp;L'Heureux, 550,50&nbsp;$).
      */
-    private static String text(Element el) {
+    static String text(Element el) {
         return el.wholeText().replaceAll("[ \\t\\r\\n\\f]+", " ").strip();
     }
 }
