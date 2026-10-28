@@ -14,7 +14,18 @@
     <input id="url" type="url" required inputmode="url" autocomplete="off"
            placeholder="https://… (article en français)" aria-label="Article URL">
     <button type="submit">Read</button>
+    <button id="paste-toggle" class="secondary" type="button" aria-expanded="false"
+            aria-controls="text-form">Paste</button>
     <a id="saved-link" href="saved.html">Saved</a>
+  </form>
+  <form id="text-form" hidden>
+    <textarea id="article-text" rows="10" required lang="fr" spellcheck="false"
+              placeholder="Collez le texte de l'article ici. Une première ligne courte sert de titre."
+              aria-label="Article text"></textarea>
+    <div class="text-actions">
+      <button type="submit">Read text</button>
+      <button id="text-cancel" class="secondary" type="button">Cancel</button>
+    </div>
   </form>
   <p id="status" role="status" hidden></p>
   <main id="article"></main>

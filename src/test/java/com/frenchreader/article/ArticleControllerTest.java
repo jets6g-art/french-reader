@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -11,6 +12,7 @@ import java.net.URI;
 
 import org.jsoup.Jsoup;
 import org.junit.jupiter.api.Test;
+import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
@@ -118,5 +120,49 @@ class ArticleControllerTest {
         service = new ArticleService(fetcher, memoryCache(), java.time.Duration.ofHours(1));
         org.assertj.core.api.Assertions.assertThatThrownBy(() -> service.load(URL))
                 .hasMessageContaining("422");
+    }
+
+    private static MockMvc pasteMvc() {
+        return MockMvcBuilders.standaloneSetup(new ArticleController(new ArticleService(
+                mock(ArticleFetcher.class), memoryCache(), java.time.Duration.ofHours(1)))).build();
+    }
+
+    @Test
+    void pastedTextBecomesAnArticleWithItsFirstLineAsTitle() throws Exception {
+        String text = "L'insécurité linguistique\n\nBeaucoup de gens hésitent à parler.\nIls craignent l'erreur.\n\n"
+                + "Pourtant, c'est en parlant qu'on apprend.\n";
+        pasteMvc().perform(post("/api/v1/article/text").contentType(MediaType.APPLICATION_JSON)
+                        .content(new com.fasterxml.jackson.databind.ObjectMapper()
+                                .writeValueAsString(java.util.Map.of("text", text))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.title").value("L'insécurité linguistique"))
+                .andExpect(jsonPath("$.titleTokens[1].text").value("insécurité"))
+                .andExpect(jsonPath("$.source").value("Pasted text"))
+                .andExpect(jsonPath("$.url").value(""))
+                // blank lines separate paragraphs; the single line break inside one is just a space
+                .andExpect(jsonPath("$.sentences.length()").value(3))
+                .andExpect(jsonPath("$.sentences[1].paragraph").value(0))
+                .andExpect(jsonPath("$.sentences[2].paragraph").value(1))
+                .andExpect(jsonPath("$.sentences[0].tokens[0].idx").value(3));
+    }
+
+    @Test
+    void pastedTextWithoutHeadlineHasNoTitle() {
+        ArticleService service = new ArticleService(mock(ArticleFetcher.class), memoryCache(), java.time.Duration.ofHours(1));
+        Article a = service.fromText(null, "Il pleut ce matin.\r\nLe soleil reviendra demain.");
+        assertThat(a.title()).isEmpty();
+        assertThat(a.titleTokens()).isEmpty();
+        assertThat(a.sentences()).extracting(Sentence::paragraph).containsExactly(0, 1);
+        assertThat(service.fromText(" Mon titre ", "Il pleut ce matin.\nTitre court").title()).isEqualTo("Mon titre");
+    }
+
+    @Test
+    void emptyOrHugePastedTextIsRejected() throws Exception {
+        pasteMvc().perform(post("/api/v1/article/text").contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"text\":\"  \n \"}"))
+                .andExpect(status().isBadRequest());
+        pasteMvc().perform(post("/api/v1/article/text").contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"text\":\"" + "a".repeat(ArticleController.MAX_TEXT_LENGTH + 1) + "\"}"))
+                .andExpect(status().isPayloadTooLarge());
     }
 }

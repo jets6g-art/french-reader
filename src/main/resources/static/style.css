@@ -69,7 +69,43 @@ body {
 }
 
 @media (prefers-color-scheme: dark) {
-  #load-form button { color: #111; }
+  #load-form button, #text-form button { color: #111; }
+}
+
+#load-form button.secondary, #text-form button.secondary {
+  color: var(--accent);
+  background: transparent;
+  border: 1px solid var(--border);
+}
+
+#text-form {
+  max-width: 42rem;
+  margin: 0 auto 1rem;
+  font-family: system-ui, sans-serif;
+}
+
+#text-form textarea {
+  display: block;
+  width: 100%;
+  padding: 0.6rem 0.75rem;
+  font: 1rem/1.5 system-ui, sans-serif;
+  color: var(--fg);
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  resize: vertical;
+}
+
+#text-form .text-actions { display: flex; gap: 0.5rem; margin-top: 0.5rem; }
+
+#text-form button {
+  padding: 0.6rem 1rem;
+  font: inherit;
+  font-size: 1rem;
+  color: #fff;
+  background: var(--accent);
+  border: 0;
+  border-radius: 6px;
 }
 
 #status {

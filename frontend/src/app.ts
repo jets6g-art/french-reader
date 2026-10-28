@@ -30,10 +30,16 @@ const popupEl = document.getElementById("popup") as HTMLElement;
 const popupBody = document.getElementById("popup-body") as HTMLElement;
 const popupClose = document.getElementById("popup-close") as HTMLButtonElement;
 const savedLink = document.getElementById("saved-link") as HTMLAnchorElement;
+const pasteToggle = document.getElementById("paste-toggle") as HTMLButtonElement;
+const textForm = document.getElementById("text-form") as HTMLFormElement;
+const textInput = document.getElementById("article-text") as HTMLTextAreaElement;
+const textCancel = document.getElementById("text-cancel") as HTMLButtonElement;
 
 const HAS_WORD_CHAR = /[\p{L}\p{N}]/u;
 const TITLE_SID = -1; // article sentence ids start at 0
 const LOOKUP_TIMEOUT_MS = 10_000; // matches the backend's 10s LLM budget
+// Pasted text has no URL to reload from, so this browser keeps it until a URL is read instead.
+const PASTED_KEY = "french-reader.pasted-text";
 
 // Sentences by id for the current article, so a click can recover its containing sentence.
 let sentencesById = new Map<number, Sentence>();
@@ -67,14 +73,27 @@ function setStatus(msg: string, isError = false): void {
   statusEl.classList.toggle("error", isError);
 }
 
-async function loadArticle(url: string): Promise<void> {
+function loadArticle(url: string): Promise<void> {
+  return showArticle((signal) => fetch(`/api/v1/article?url=${encodeURIComponent(url)}`, { signal }));
+}
+
+function loadText(text: string): Promise<void> {
+  return showArticle((signal) =>
+    fetch("/api/v1/article/text", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text }),
+      signal,
+    }),
+  );
+}
+
+async function showArticle(request: (signal: AbortSignal) => Promise<Response>): Promise<void> {
   setStatus("Loading…");
   articleEl.replaceChildren();
   clearSelection();
   try {
-    const res = await fetch(`/api/v1/article?url=${encodeURIComponent(url)}`, {
-      signal: AbortSignal.timeout(15000),
-    });
+    const res = await request(AbortSignal.timeout(15000));
     if (!res.ok) {
       let reason = `HTTP ${res.status}`;
       try {
@@ -95,7 +114,7 @@ async function loadArticle(url: string): Promise<void> {
 
 // Everything is built with createElement/textContent — article text is never parsed as HTML.
 function render(article: Article): void {
-  document.title = `${article.title} — French Reader`;
+  document.title = `${article.title || article.source} — French Reader`;
   sentencesById = new Map(article.sentences.map((s) => [s.id, s]));
   // The title is one clickable "sentence" with a reserved id, so word clicks treat it like the body.
   const titleSentence: Sentence = { id: TITLE_SID, paragraph: -1, kind: "heading", tokens: article.titleTokens };
@@ -103,13 +122,17 @@ function render(article: Article): void {
   articleUrl = article.url;
 
   const header = document.createElement("header");
-  const h1 = document.createElement("h1");
-  h1.dataset.para = String(titleSentence.paragraph);
-  h1.append(renderSentence(titleSentence));
+  if (article.titleTokens.length) {
+    // Pasted text may have no headline.
+    const h1 = document.createElement("h1");
+    h1.dataset.para = String(titleSentence.paragraph);
+    h1.append(renderSentence(titleSentence));
+    header.append(h1);
+  }
   const source = document.createElement("p");
   source.className = "source";
   source.textContent = article.source;
-  header.append(h1, source);
+  header.append(source);
 
   const blocks: Node[] = [header];
   let current: HTMLElement | null = null;
@@ -393,18 +416,61 @@ document.addEventListener("keydown", (ev) => {
   if (ev.key === "Escape") clearSelection();
 });
 
+function storePasted(text: string | null): void {
+  try {
+    if (text === null) localStorage.removeItem(PASTED_KEY);
+    else localStorage.setItem(PASTED_KEY, text);
+  } catch {
+    // private window or storage blocked: the text just won't survive a reload
+  }
+}
+
+function storedPasted(): string | null {
+  try {
+    return localStorage.getItem(PASTED_KEY);
+  } catch {
+    return null;
+  }
+}
+
+function showTextForm(show: boolean): void {
+  textForm.hidden = !show;
+  pasteToggle.setAttribute("aria-expanded", String(show));
+  if (show) textInput.focus();
+}
+
 form.addEventListener("submit", (ev) => {
   ev.preventDefault();
   const url = urlInput.value.trim();
   if (!url) return;
+  showTextForm(false);
+  storePasted(null);
   history.replaceState(null, "", `?url=${encodeURIComponent(url)}`);
   void loadArticle(url);
+});
+
+pasteToggle.addEventListener("click", () => showTextForm(textForm.hidden));
+textCancel.addEventListener("click", () => showTextForm(false));
+
+textForm.addEventListener("submit", (ev) => {
+  ev.preventDefault();
+  const text = textInput.value.trim();
+  if (!text) return;
+  showTextForm(false);
+  storePasted(text);
+  urlInput.value = "";
+  history.replaceState(null, "", location.pathname);
+  void loadText(text);
 });
 
 void refreshSaved();
 
 const initial = new URLSearchParams(location.search).get("url");
+const pasted = storedPasted();
 if (initial) {
   urlInput.value = initial;
   void loadArticle(initial);
+} else if (pasted) {
+  textInput.value = pasted;
+  void loadText(pasted);
 }

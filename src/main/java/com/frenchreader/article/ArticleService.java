@@ -93,6 +93,43 @@ public class ArticleService {
         return host.startsWith("www.") ? host.substring(4) : host;
     }
 
+    static final String PASTED_SOURCE = "Pasted text";
+    private static final int MAX_TITLE_LENGTH = 200;
+
+    /**
+     * Pasted article text, read like a fetched article. Paragraphs are split on blank lines when
+     * there are any (text copied from a PDF hard-wraps inside paragraphs), otherwise on line
+     * breaks. With no title given, a short first line without closing punctuation is the headline.
+     * Nothing is fetched, so nothing is cached: the client sends the text again to re-read it.
+     */
+    public Article fromText(String title, String text) {
+        String normalized = text.replace("\r\n", "\n").replace('\r', '\n');
+        String separator = normalized.matches("(?s).*\n[ \t]*\n.*") ? "\n[ \t]*\n" : "\n";
+        List<String> paragraphs = new ArrayList<>();
+        for (String raw : normalized.split(separator)) {
+            String p = raw.replaceAll("[ \t\n\f]+", " ").strip(); // keeps NBSP, as the extractors do
+            if (!p.isEmpty()) {
+                paragraphs.add(p);
+            }
+        }
+        if (paragraphs.isEmpty()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "The pasted text is empty");
+        }
+        String heading = title == null ? "" : title.replaceAll("[ \t\r\n\f]+", " ").strip();
+        if (heading.isEmpty() && paragraphs.size() > 1 && looksLikeHeadline(paragraphs.get(0))) {
+            heading = paragraphs.remove(0);
+        }
+        List<RadioCanadaExtractor.Block> blocks = paragraphs.stream()
+                .map(p -> new RadioCanadaExtractor.Block("p", p))
+                .toList();
+        List<Token> titleTokens = FrenchTokenizer.tokenize(heading, 0);
+        return new Article(heading, titleTokens, PASTED_SOURCE, "", toSentences(blocks, titleTokens.size()));
+    }
+
+    private static boolean looksLikeHeadline(String line) {
+        return line.length() <= MAX_TITLE_LENGTH && !line.matches(".*[.!?…:;,»\"]$");
+    }
+
     /** Copies cached before titleTokens existed get them now, without a refetch. */
     private static Article withTitleTokens(Article a) {
         if (a.titleTokens() != null) {
