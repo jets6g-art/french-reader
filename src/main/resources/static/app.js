@@ -16,10 +16,19 @@ const TITLE_SID = -1; // article sentence ids start at 0
 const LOOKUP_TIMEOUT_MS = 10000; // matches the backend's 10s LLM budget
 // Pasted text has no URL to reload from, so this browser keeps it until a URL is read instead.
 const PASTED_KEY = "french-reader.pasted-text";
+// Words already looked up stay highlighted for review: token idx per article, in this browser only.
+const MARKS_KEY = "french-reader.marked-words";
+const MAX_MARKED_ARTICLES = 100;
 // Sentences by id for the current article, so a click can recover its containing sentence.
 let sentencesById = new Map();
 let articleUrl = "";
 let selected = null;
+// Whether the open word was unmarked before this click, so a click that turns into a double-click
+// (a translation) doesn't leave a highlight behind.
+let selectedIsNew = false;
+// Looked-up words of the current article and the storage key they are kept under.
+let marked = new Set();
+let marksKey = "";
 // The in-flight lookup; a newer click aborts it so a slow reply can't overwrite a newer popup.
 let lookupInFlight = null;
 // Saved entries by normalized lemma -> id, so the popup knows whether to offer Save or Remove.
@@ -39,6 +48,51 @@ async function refreshSaved() {
     catch {
         // Reading doesn't depend on the list; Save still works and corrects the state itself.
     }
+}
+function readMarks() {
+    try {
+        return JSON.parse(localStorage.getItem(MARKS_KEY) ?? "{}") ?? {};
+    }
+    catch {
+        return {};
+    }
+}
+function saveMarks() {
+    try {
+        const all = readMarks();
+        delete all[marksKey]; // re-added last: key order is recency, oldest articles drop off first
+        if (marked.size)
+            all[marksKey] = [...marked];
+        const keys = Object.keys(all);
+        for (const k of keys.slice(0, Math.max(0, keys.length - MAX_MARKED_ARTICLES)))
+            delete all[k];
+        localStorage.setItem(MARKS_KEY, JSON.stringify(all));
+    }
+    catch {
+        // private window or storage blocked: highlights last until the page is left
+    }
+}
+/** Pasted text has no URL, so its highlights are keyed by a hash of the text itself. */
+function articleKey(article) {
+    if (article.url)
+        return article.url;
+    const text = [article.titleTokens, ...article.sentences.map((s) => s.tokens)]
+        .flat()
+        .map((t) => t.text + t.ws)
+        .join("");
+    let h = 0x811c9dc5; // FNV-1a
+    for (let i = 0; i < text.length; i++)
+        h = Math.imul(h ^ text.charCodeAt(i), 0x01000193);
+    return `pasted:${(h >>> 0).toString(36)}`;
+}
+function setMarked(word, on) {
+    word.classList.toggle("looked-up", on);
+    const idx = Number(word.dataset.idx);
+    if (on)
+        marked.add(idx);
+    else
+        marked.delete(idx);
+    saveMarks();
 }
 function setStatus(msg, isError = false) {
     statusEl.textContent = msg;
@@ -90,6 +144,8 @@ function render(article) {
     const titleSentence = { id: TITLE_SID, paragraph: -1, kind: "heading", tokens: article.titleTokens };
     sentencesById.set(TITLE_SID, titleSentence);
     articleUrl = article.url;
+    marksKey = articleKey(article);
+    marked = new Set(readMarks()[marksKey] ?? []);
     const header = document.createElement("header");
     if (article.titleTokens.length) {
         // Pasted text may have no headline.
@@ -123,7 +179,7 @@ function renderSentence(sentence) {
     for (const t of sentence.tokens) {
         if (HAS_WORD_CHAR.test(t.text)) {
             const w = document.createElement("span");
-            w.className = "w";
+            w.className = marked.has(t.idx) ? "w looked-up" : "w";
             w.dataset.idx = String(t.idx);
             w.textContent = t.text;
             el.append(w);
@@ -150,9 +206,26 @@ function popupLine(className, text) {
     p.textContent = text;
     return p;
 }
+/** The clicked word, with an Unmark button for a word clicked by accident. */
+function wordHeading(word) {
+    const heading = popupLine("popup-word", word);
+    const unmark = document.createElement("button");
+    unmark.type = "button";
+    unmark.className = "unmark";
+    unmark.textContent = "Unmark";
+    unmark.title = "Remove this word's highlight";
+    unmark.addEventListener("click", unmarkSelected);
+    heading.append(unmark);
+    return heading;
+}
+function unmarkSelected() {
+    if (selected)
+        setMarked(selected, false);
+    clearSelection();
+}
 function showLoading(word) {
     popupBody.classList.remove("has-idiom");
-    popupBody.replaceChildren(popupLine("popup-word", word), popupLine("popup-muted", "Looking up…"));
+    popupBody.replaceChildren(wordHeading(word), popupLine("popup-muted", "Looking up…"));
     popupEl.hidden = false;
 }
 function showError(word, message, retry) {
@@ -161,7 +234,7 @@ function showError(word, message, retry) {
     button.textContent = "Retry";
     button.addEventListener("click", retry);
     popupBody.classList.remove("has-idiom");
-    popupBody.replaceChildren(popupLine("popup-word", word), popupLine("popup-error", message), button);
+    popupBody.replaceChildren(wordHeading(word), popupLine("popup-error", message), button);
 }
 function saveButton(word, sentence, r) {
     const wrap = document.createElement("div");
@@ -203,7 +276,7 @@ function saveButton(word, sentence, r) {
 }
 function wordLines(word, r) {
     const meta = [r.lemma && r.lemma !== word ? `→ ${r.lemma}` : "", r.pos, r.register].filter(Boolean).join(" · ");
-    const lines = [popupLine("popup-word", word)];
+    const lines = [wordHeading(word)];
     if (meta)
         lines.push(popupLine("popup-muted", meta));
     if (r.meaning)
@@ -310,9 +383,16 @@ articleEl.addEventListener("click", (ev) => {
         return;
     clearTimeout(pendingClick);
     pendingClick = setTimeout(() => {
+        if (word === selected) {
+            // Clicking the open word again takes it back, for a word clicked by accident.
+            unmarkSelected();
+            return;
+        }
         selected?.classList.remove("selected");
         selected = word;
+        selectedIsNew = !word.classList.contains("looked-up");
         word.classList.add("selected");
+        setMarked(word, true);
         const sentenceText = sentence.tokens.map((t) => t.text + t.ws).join("").trim();
         void lookup(word.textContent ?? "", sentenceText);
     }, DOUBLE_CLICK_MS);
@@ -355,7 +435,10 @@ articleEl.addEventListener("dblclick", (ev) => {
     if (!block)
         return;
     clearTimeout(pendingClick);
-    clearSelection(); // in case a slow double-click let the lookup start anyway
+    // In case a slow double-click let the lookup start anyway: undo that click's highlight too.
+    if (selected && selectedIsNew)
+        setMarked(selected, false);
+    clearSelection();
     // Already translated (or translating): keep it; a failed one has its own Retry button.
     if (block.nextElementSibling?.classList.contains("translation"))
         return;

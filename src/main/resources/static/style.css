@@ -5,6 +5,7 @@
   --accent: #1f3a5f;
   --hover: #e6eefb;
   --selected: #ffe08a;
+  --looked-up: #fff4cc;
   --border: #dedbd0;
   --translation-bg: #eef4f0;
   --translation-edge: #4f8a68;
@@ -18,6 +19,7 @@
     --accent: #8db4ee;
     --hover: #26354d;
     --selected: #6b5a1c;
+    --looked-up: #3b3420;
     --border: #34353a;
     --translation-bg: #1d2a23;
     --translation-edge: #6fae8a;
@@ -128,6 +130,8 @@ body {
 
 .w { cursor: pointer; border-radius: 3px; }
 .w:hover { background: var(--hover); }
+/* Looked up earlier: a paler version of the open word's highlight, kept for review. */
+.w.looked-up { background: var(--looked-up); }
 .w.selected { background: var(--selected); }
 
 #popup {
@@ -151,6 +155,14 @@ body {
   background: transparent;
   border: 1px solid var(--border);
   border-radius: 6px;
+}
+
+#popup-body .popup-word button.unmark {
+  margin-left: 0.75rem;
+  padding: 0.1rem 0.55rem;
+  font: 0.8rem system-ui, sans-serif;
+  color: var(--muted);
+  vertical-align: 0.15em;
 }
 
 #popup-close {
